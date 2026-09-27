@@ -25,12 +25,14 @@ python -m app.main
 python -m app.main --paper --cycles 1
 python -m app.main --telegram
 python -m backtest --pair BTC-USDT --days 30
+python -m backtest --env mainnet --pair BTC-USDT --days 30
+python -m backtest --env mainnet --pair BTC-USDT --days 30 --fee 0.001
 pytest
 ```
 
 `--paper` без `--cycles` работает, пока процесс не получит SIGINT или SIGTERM. Открытые бумажные позиции при остановке не закрываются. `--telegram` показывает меню, принимает команды и крутит тот же бумажный цикл. Пустой `BOT_TOKEN` завершает процесс с кодом 2.
 
-Бэктест пишет отчёт в консоль и файлы `data/backtests/reports/`. Свечи кэшируются в `data/backtests/`. Решение принимается по закрытой свече, сделка считается по открытию следующей.
+Бэктест пишет отчёт в консоль и файлы `data/backtests/reports/`. `--env` выбирает публичный хост свечей: `testnet` по умолчанию или `mainnet`. Кэш лежит отдельно в `data/backtests/testnet` и `data/backtests/mainnet`. Mainnet в этом режиме только читает публичные свечи и карточку пары, без токена и без ордеров. `--fee` меняет комиссию одного прогона и не трогает дефолт 1%. Решение принимается по закрытой свече, сделка считается по открытию следующей.
 
 Проверка testnet только чтением (символы, свечи, балансы, без ордеров):
 
@@ -61,7 +63,7 @@ docker compose up -d --build
 - `trading/` — индикаторы, тренд 15m (только LONG), риск, бумажное исполнение, ордера и позиции. Ордер создаётся только в order manager, `clientOrderId` пишется до запроса.
 - `python -m app.main --paper` — цикл на публичном REST testnet. Капитал бумажный, с `PAPER_STARTING_EQUITY`.
 - `python -m app.main --telegram` — меню Aiogram 3 и тот же бумажный цикл. Токен биржи в чате сразу шифруется, сообщение удаляется. MAINNET записывается только после фразы `START LIVE`, `XROCKET_ENV=mainnet` и проверки, что TON-USDT есть на бирже.
-- `python -m backtest --pair BTC-USDT --days 30` — прогон стратегии по истории. Ордера не отправляются.
+- `python -m backtest --pair BTC-USDT --days 30` — прогон стратегии по истории testnet. `--env mainnet` читает публичные свечи основной сети. Ордера не отправляются.
 - Схема SQLite: пользователи, аккаунты xRocket, стратегии и настройки, позиции, ордера, сигналы, сделки, дневная статистика, очередь уведомлений, настройки бота, системные события, heartbeats, свечи. У настроек бота есть `paper_cash`.
 - Повтор при `database is locked`: 100 мс, 250 мс, 500 мс, 1 с, 2 с, затем ошибка.
 - Проверка целостности и аварийный бэкап, если `integrity_check` не равен `ok`.

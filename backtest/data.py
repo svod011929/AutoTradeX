@@ -1,11 +1,17 @@
-"""Historical candles from public REST, cached in JSON and SQLite."""
+"""Historical candles from public REST, cached in JSON and SQLite.
+
+Mainnet and testnet caches stay in separate directories. The client is built
+with no token and is only used for public candle reads.
+"""
 
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import Never
 
+from core.config import XRocketEnv, default_rest_url
 from trading.market import Bar, api_candle_interval, timeframe_seconds
 from xrocket.models import Candle
 from xrocket.rest_client import XRocketRestClient
@@ -26,6 +32,24 @@ def bars_from_candles(candles: list[Candle]) -> list[Bar]:
         )
         for candle in candles
     ]
+
+
+def _assert_never(value: Never) -> Never:
+    raise AssertionError(f"unhandled value: {value}")
+
+
+def history_rest_url(env: XRocketEnv) -> str:
+    """Public REST host for candle reads. No token is attached by this helper."""
+    return default_rest_url(env)
+
+
+def history_cache_dir(root: Path, env: XRocketEnv) -> Path:
+    """Keep testnet and mainnet candles in different folders."""
+    match env:
+        case "testnet" | "mainnet":
+            return root / env
+        case _ as unreachable:
+            _assert_never(unreachable)
 
 
 def _aware(moment: datetime) -> datetime:
