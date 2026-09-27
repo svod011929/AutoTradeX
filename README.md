@@ -25,14 +25,14 @@ python -m app.main
 python -m app.main --paper --cycles 1
 python -m app.main --telegram
 python -m backtest --pair BTC-USDT --days 30
-python -m backtest --env mainnet --pair BTC-USDT --days 30
-python -m backtest --env mainnet --pair BTC-USDT --days 30 --fee 0.001
+python -m backtest --env mainnet --pair BTC-USDT --days 90 --timeframe 15m
+python -m backtest --env mainnet --pair ETH-USDT --days 180 --timeframe 1h
 pytest
 ```
 
 `--paper` без `--cycles` работает, пока процесс не получит SIGINT или SIGTERM. Открытые бумажные позиции при остановке не закрываются. `--telegram` показывает меню, принимает команды и крутит тот же бумажный цикл. Пустой `BOT_TOKEN` завершает процесс с кодом 2.
 
-Бэктест пишет отчёт в консоль и файлы `data/backtests/reports/`. `--env` выбирает публичный хост свечей: `testnet` по умолчанию или `mainnet`. Кэш лежит отдельно в `data/backtests/testnet` и `data/backtests/mainnet`. Mainnet в этом режиме только читает публичные свечи и карточку пары, без токена и без ордеров. `--fee` меняет комиссию одного прогона и не трогает дефолт 1%. Решение принимается по закрытой свече, сделка считается по открытию следующей.
+Бэктест пишет отчёт в консоль и файлы `data/backtests/reports/`. `--env` выбирает публичный хост свечей: `testnet` по умолчанию или `mainnet`. Кэш лежит отдельно в `data/backtests/testnet` и `data/backtests/mainnet`. Mainnet в этом режиме только читает публичные свечи, карточку пары и публичные `trade-fees`, без токена и без ордеров. Комиссия прогона — taker из этого ответа, иначе 0.3%. `--fee` меняет комиссию одного прогона и не трогает дефолт. `--timeframe` задаёт интервал свечей (`15m`, `1h`, `4h`); живой режим по умолчанию остаётся на 15m. Решение принимается по закрытой свече, сделка считается по открытию следующей. Порог спреда 0.5% в бэктесте не подставляется как фактический спред.
 
 Проверка testnet только чтением (символы, свечи, балансы, без ордеров):
 
@@ -60,7 +60,7 @@ docker compose up -d --build
 
 - `docs/XROCKET_API.md` — REST, WebSocket, ошибки, лимиты, пробелы документации.
 - `xrocket/` — REST и WebSocket. Свечи и стакан в SQLite из сокета не пишутся. Таймаут создания ордера не приводит к повторному POST. Выход — рыночный SELL с `size`.
-- `trading/` — индикаторы, тренд 15m (только LONG), риск, бумажное исполнение, ордера и позиции. Ордер создаётся только в order manager, `clientOrderId` пишется до запроса.
+- `trading/` — индикаторы, тренд (только LONG) на таймфрейме настроек, по умолчанию 15m, риск, бумажное исполнение, ордера и позиции. Ордер создаётся только в order manager, `clientOrderId` пишется до запроса. Размер позиции учитывает комиссии и ожидаемое проскальзывание. Сделка с чистым R:R после издержек ниже 1.5 пропускается.
 - `python -m app.main --paper` — цикл на публичном REST testnet. Капитал бумажный, с `PAPER_STARTING_EQUITY`.
 - `python -m app.main --telegram` — меню Aiogram 3 и тот же бумажный цикл. Токен биржи в чате сразу шифруется, сообщение удаляется. MAINNET записывается только после фразы `START LIVE`, `XROCKET_ENV=mainnet` и проверки, что TON-USDT есть на бирже.
 - `python -m backtest --pair BTC-USDT --days 30` — прогон стратегии по истории testnet. `--env mainnet` читает публичные свечи основной сети. Ордера не отправляются.

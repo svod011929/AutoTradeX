@@ -30,7 +30,16 @@ MARKET_EXIT_SIDE = "sell"
 
 # A bar is closed when its window has ended, plus this grace, and REST has the bar.
 CANDLE_CLOSE_GRACE_SECONDS = 5
-DEFAULT_FEE_RATE = Decimal("0.01")
+# Live public trade-fees, 2026-09-27: taker "0.003" and maker "0.002" are fractions.
+# Market orders pay the taker. The docs string "0.01" was only an example.
+DEFAULT_FEE_RATE = Decimal("0.003")
+DEFAULT_MAKER_FEE_RATE = Decimal("0.002")
+FEE_REFRESH_SECONDS = 3600
+# Skip a trade when expected net profit to the take-profit, after fees and
+# expected slippage, is below this multiple of the expected stop loss.
+MIN_NET_REWARD_RISK = Decimal("1.5")
+# Candles have no historical book. The 0.5% spread cap is a live gate, not a fill.
+BACKTEST_ASSUMED_SPREAD_FRACTION = Decimal("0")
 
 # Stage 5 locked the working thresholds. ATR has no upper cap.
 RSI_ENTRY_MIN = Decimal("30")
@@ -75,8 +84,8 @@ def exchange_orders_allowed(mode: ExecutionModeName, allow_exchange_orders: bool
 def fee_rate_to_fraction(raw: Decimal | str, treat_as_fraction: bool) -> Decimal:
     """Interpret a trade-fee string.
 
-    The approved default treats ``0.01`` as a fraction (1%). The exchange text
-    does not define the unit; a later tiny testnet order is the check.
+    Live ``trade-fees`` values are fractions: ``0.003`` is 0.3% taker.
+    ``treat_as_fraction`` stays on. Turning it off divides the raw string by 100.
     """
     value = raw if isinstance(raw, Decimal) else Decimal(str(raw))
     if treat_as_fraction:

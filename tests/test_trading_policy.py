@@ -9,7 +9,9 @@ from core.trading_policy import (
     CANDLE_CLOSE_GRACE_SECONDS,
     CASH_RESERVE_FRACTION,
     DEFAULT_ATR_SL_MULTIPLIER,
+    BACKTEST_ASSUMED_SPREAD_FRACTION,
     DEFAULT_FEE_RATE,
+    MIN_NET_REWARD_RISK,
     DEFAULT_MIN_VOLUME_RATIO,
     DEFAULT_TAKE_PROFIT_RR,
     DEFAULT_TRAILING_ACTIVATION_ATR,
@@ -94,12 +96,18 @@ def test_strategy_columns_use_the_approved_defaults() -> None:
 def test_stage4_exit_candle_fee_and_book_decisions() -> None:
     assert MARKET_EXIT_FIELD == "size"
     assert CANDLE_CLOSE_GRACE_SECONDS == 5
-    assert DEFAULT_FEE_RATE == Decimal("0.01")
+    assert DEFAULT_FEE_RATE == Decimal("0.003")
+    assert MIN_NET_REWARD_RISK == Decimal("1.5")
+    assert BACKTEST_ASSUMED_SPREAD_FRACTION == Decimal("0")
     assert USE_FULL_ORDERBOOK_SNAPSHOT is True
     assert USE_REST_TRADING_BALANCE is True
     settings = Settings(_env_file=None)
     assert settings.candle_close_grace_seconds == 5
-    assert settings.default_fee_rate == Decimal("0.01")
+    assert settings.default_fee_rate == Decimal("0.003")
+    assert settings.min_net_reward_risk == Decimal("1.5")
+    assert settings.backtest_assumed_spread_fraction == Decimal("0")
+    assert settings.fee_refresh_seconds == 3600
+    assert settings.default_timeframe == "15m"
     assert settings.max_spread_fraction == Decimal("0.005")
     assert settings.max_slippage_fraction == Decimal("0.003")
     assert settings.paper_slippage_fraction == Decimal("0.001")

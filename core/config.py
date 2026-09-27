@@ -12,8 +12,11 @@ from core.trading_policy import (
     CANDLE_CLOSE_GRACE_SECONDS,
     CASH_RESERVE_FRACTION,
     DEFAULT_ATR_SL_MULTIPLIER,
+    BACKTEST_ASSUMED_SPREAD_FRACTION,
     DEFAULT_FEE_RATE,
     DEFAULT_MIN_VOLUME_RATIO,
+    FEE_REFRESH_SECONDS,
+    MIN_NET_REWARD_RISK,
     DEFAULT_TAKE_PROFIT_RR,
     DEFAULT_TRAILING_ACTIVATION_ATR,
     DEFAULT_TRAILING_ATR_MULTIPLIER,
@@ -115,6 +118,9 @@ class Settings(BaseSettings):
     take_profit_rr: Decimal = DEFAULT_TAKE_PROFIT_RR
     candle_close_grace_seconds: int = CANDLE_CLOSE_GRACE_SECONDS
     default_fee_rate: Decimal = DEFAULT_FEE_RATE
+    fee_refresh_seconds: int = FEE_REFRESH_SECONDS
+    min_net_reward_risk: Decimal = MIN_NET_REWARD_RISK
+    backtest_assumed_spread_fraction: Decimal = BACKTEST_ASSUMED_SPREAD_FRACTION
     orderbook_depth: int = 50
     max_spread_fraction: Decimal = MAX_SPREAD_FRACTION
     max_slippage_fraction: Decimal = MAX_SLIPPAGE_FRACTION
@@ -143,7 +149,13 @@ class Settings(BaseSettings):
             raise ValueError("value must be >= 0")
         return value
 
-    @field_validator("backup_retention", "backup_interval_hours", "ws_ping_interval", "volume_ma_period")
+    @field_validator(
+        "backup_retention",
+        "backup_interval_hours",
+        "ws_ping_interval",
+        "volume_ma_period",
+        "fee_refresh_seconds",
+    )
     @classmethod
     def _positive(cls, value: int) -> int:
         if value < 1:
@@ -204,11 +216,19 @@ class Settings(BaseSettings):
         "max_slippage_fraction",
         "paper_slippage_fraction",
         "cash_reserve_fraction",
+        "backtest_assumed_spread_fraction",
     )
     @classmethod
     def _fraction(cls, value: Decimal) -> Decimal:
         if value < 0 or value >= 1:
             raise ValueError("fraction must be >= 0 and < 1")
+        return value
+
+    @field_validator("min_net_reward_risk")
+    @classmethod
+    def _min_net_reward_risk(cls, value: Decimal) -> Decimal:
+        if value < 0:
+            raise ValueError("min net reward/risk must be >= 0")
         return value
 
     @model_validator(mode="after")

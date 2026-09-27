@@ -6,12 +6,12 @@ from decimal import Decimal
 import pytest
 
 from core.config import Settings
-from core.trading_policy import DEFAULT_FEE_RATE
+from core.trading_policy import DEFAULT_FEE_RATE, MAX_SPREAD_FRACTION
 from trading.market import Bar
 from trading.strategy_engine import StrategyParams, evaluate
 from backtest.__main__ import _parser
 from backtest.data import CandleCache, history_cache_dir, history_rest_url, load_history
-from backtest.engine import buy_fill_price, run_backtest
+from backtest.engine import _Open, _try_exit, buy_fill_price, costs_are_consistent, run_backtest
 from backtest.metrics import TradePoint, summarize
 from tests.market_data import make_symbol, trending_bars
 
@@ -83,7 +83,7 @@ def test_entry_ignores_the_next_bar_close(monkeypatch) -> None:
         return evaluate(bars, params)
 
     monkeypatch.setattr("backtest.engine.evaluate", spy)
-    settings = Settings(_env_file=None)
+    settings = Settings(_env_file=None).model_copy(update={"min_net_reward_risk": Decimal("0")})
     symbol = make_symbol("BTC-USDT")
     calm = run_backtest(base + [extra(Decimal("100"))], symbol, settings=settings)
     seen_calm = list(seen)
@@ -159,9 +159,9 @@ def test_cli_defaults_to_testnet_and_can_select_mainnet() -> None:
 
 def test_fee_override_leaves_the_policy_default() -> None:
     settings = Settings(_env_file=None)
-    assert settings.default_fee_rate == DEFAULT_FEE_RATE == Decimal("0.01")
+    assert settings.default_fee_rate == DEFAULT_FEE_RATE == Decimal("0.003")
     copied = settings.model_copy(update={"default_fee_rate": Decimal("0.001")})
-    assert settings.default_fee_rate == Decimal("0.01")
+    assert settings.default_fee_rate == Decimal("0.003")
     assert copied.default_fee_rate == Decimal("0.001")
 
 
@@ -191,3 +191,97 @@ async def test_mainnet_cache_miss_does_not_read_testnet(tmp_path, monkeypatch) -
             timeframe="15m",
         )
     assert seen == [(history_rest_url("mainnet"), None)]
+
+
+def _with_following_bar(bars: list[Bar]) -> list[Bar]:
+    last = bars[-1]
+    price = last.close
+    return bars + [
+        Bar(
+            last.open_time + timedelta(minutes=15),
+            price,
+            price + Decimal("0.2"),
+            price - Decimal("0.2"),
+            price,
+            Decimal("1"),
+        )
+    ]
+
+
+def test_fill_does_not_use_the_spread_cap_as_the_book() -> None:
+    settings = Settings(_env_file=None).model_copy(update={"min_net_reward_risk": Decimal("0")})
+    result = run_backtest(_with_following_bar(trending_bars()), make_symbol("BTC-USDT"), settings=settings)
+    buys = [item for item in result.fills if item.side == "buy"]
+    assert buys
+    capped = buy_fill_price(buys[0].price / (Decimal("1") + settings.paper_slippage_fraction), spread_fraction=MAX_SPREAD_FRACTION)
+    assert buys[0].price != capped
+    assert buys[0].price == buy_fill_price(
+        buys[0].price / (Decimal("1") + settings.paper_slippage_fraction)
+    )
+
+
+def test_cost_gate_counts_skipped_entries() -> None:
+    settings = Settings(_env_file=None).model_copy(update={"min_net_reward_risk": Decimal("100")})
+    result = run_backtest(_with_following_bar(trending_bars()), make_symbol("BTC-USDT"), settings=settings)
+    assert result.trades == ()
+    assert result.skipped_for_costs > 0
+
+
+def test_stop_is_first_on_one_bar_and_a_gap_fills_at_the_open() -> None:
+    opened = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    position = _Open(
+        quantity=Decimal("2"),
+        entry=Decimal("100"),
+        stop=Decimal("90"),
+        take_profit=Decimal("120"),
+        entry_fee=Decimal("0.6"),
+        opened_at=opened,
+        peak=Decimal("100"),
+        trail=None,
+        atr=Decimal("5"),
+        decision_open=opened,
+        reference_entry=Decimal("100"),
+        entry_spread=Decimal("0"),
+        entry_book_slippage=Decimal("0"),
+        entry_paper_slippage=Decimal("0"),
+    )
+    both = Bar(opened, Decimal("100"), Decimal("130"), Decimal("89"), Decimal("110"), Decimal("1"))
+    trade, _proceeds = _try_exit(
+        position,
+        both,
+        symbol_name="BTC-USDT",
+        slippage=Decimal("0.001"),
+        fee_rate=Decimal("0.003"),
+        spread_fraction=Decimal("0"),
+    )
+    assert trade is not None
+    assert trade.reason == "sl"
+    assert trade.reference_exit == Decimal("90")
+    assert trade.exit_price == Decimal("90") * Decimal("0.999")
+    assert trade.exit_spread == Decimal("0")
+    assert trade.exit_book_slippage == Decimal("0")
+    assert costs_are_consistent(trade)
+    gap = Bar(
+        opened + timedelta(minutes=15),
+        Decimal("80"),
+        Decimal("130"),
+        Decimal("70"),
+        Decimal("75"),
+        Decimal("1"),
+    )
+    gapped, _cash = _try_exit(
+        position,
+        gap,
+        symbol_name="BTC-USDT",
+        slippage=Decimal("0.001"),
+        fee_rate=Decimal("0.003"),
+        spread_fraction=Decimal("0"),
+    )
+    assert gapped is not None
+    assert gapped.reason == "sl"
+    assert gapped.reference_exit == Decimal("80")
+    assert gapped.exit_price == Decimal("80") * Decimal("0.999")
+    half_cap = Decimal("80") * (Decimal("1") - MAX_SPREAD_FRACTION / Decimal("2")) * Decimal("0.999")
+    assert gapped.exit_price != half_cap
+    assert costs_are_consistent(gapped)
+    assert gapped.fees == gapped.entry_fee + gapped.exit_fee

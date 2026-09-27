@@ -16,6 +16,7 @@ from pathlib import Path
 from core.config import Settings, XRocketEnv
 from trading.market import Bar, candle_is_closed
 from xrocket.exceptions import XRocketError
+from xrocket.fee_schedule import FeeSchedule
 from xrocket.rest_client import XRocketRestClient
 
 from backtest.data import history_cache_dir, history_rest_url, load_history
@@ -51,7 +52,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fee",
         default=None,
-        help="Fee fraction for this run only. Default stays 0.01 in trading policy.",
+        help="Fee fraction for this run only. Omit to read public taker, else 0.003. Does not change the policy default.",
     )
     return parser
 
@@ -64,20 +65,21 @@ async def _run(args: argparse.Namespace, settings: Settings) -> int:
     env = _as_env(str(args.env))
     rest_url = history_rest_url(env)
     cache_dir = history_cache_dir(Path(args.cache), env)
-    try:
-        fee = _fee(args.fee, settings)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    run_settings = settings.model_copy(update={"default_fee_rate": fee})
     client = XRocketRestClient(rest_url, token=None)
     try:
-        rules = await client.get_symbol(symbol_name)
-    except XRocketError as exc:
-        print(f"Пара {symbol_name} недоступна на {env}: {exc}", file=sys.stderr)
-        return 1
+        try:
+            fee, fee_source = await _resolve_fee(client, symbol_name, args.fee, settings)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        try:
+            rules = await client.get_symbol(symbol_name)
+        except XRocketError as exc:
+            print(f"Пара {symbol_name} недоступна на {env}: {exc}", file=sys.stderr)
+            return 1
     finally:
         await client.close()
+    run_settings = settings.model_copy(update={"default_fee_rate": fee})
     bars = await load_history(
         symbol_name,
         args.days,
@@ -100,7 +102,7 @@ async def _run(args: argparse.Namespace, settings: Settings) -> int:
     blocks = entry_block_counts(closed, run_settings)
     report_dir = Path(args.report)
     report_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"{symbol_name}_{env}_{args.days}d_fee{_fee_label(fee)}"
+    stem = f"{symbol_name}_{env}_{args.timeframe}_{args.days}d_fee{_fee_label(fee)}"
     json_path = report_dir / f"{stem}.json"
     trades_path = report_dir / f"{stem}_trades.csv"
     equity_path = report_dir / f"{stem}_equity.csv"
@@ -118,10 +120,25 @@ async def _run(args: argparse.Namespace, settings: Settings) -> int:
         blocks=blocks,
         period_start=closed[0].open_time,
         period_end=closed[-1].open_time,
+        timeframe=str(args.timeframe),
+        fee_source=fee_source,
     )
     _write_trades(trades_path, result)
     _write_equity(equity_path, result)
-    print(_console(result, bars=len(closed), days=args.days, env=env, fee=fee, hold=hold, blocks=blocks, closed=closed))
+    print(
+        _console(
+            result,
+            bars=len(closed),
+            days=args.days,
+            env=env,
+            fee=fee,
+            fee_source=fee_source,
+            timeframe=str(args.timeframe),
+            hold=hold,
+            blocks=blocks,
+            closed=closed,
+        )
+    )
     print(f"JSON: {json_path}")
     print(f"Сделки CSV: {trades_path}")
     print(f"Кривая CSV: {equity_path}")
@@ -138,13 +155,29 @@ def _as_env(value: str) -> XRocketEnv:
             raise ValueError(f"unsupported env: {value}")
 
 
-def _fee(raw: str | None, settings: Settings) -> Decimal:
-    if raw is None:
-        return settings.default_fee_rate
-    fee = Decimal(str(raw))
-    if fee <= 0 or fee >= 1:
-        raise ValueError("Комиссия задаётся долей больше 0 и меньше 1, например 0.001")
-    return fee
+async def _resolve_fee(
+    client: XRocketRestClient,
+    symbol: str,
+    raw: str | None,
+    settings: Settings,
+) -> tuple[Decimal, str]:
+    if raw is not None:
+        fee = Decimal(str(raw))
+        if fee <= 0 or fee >= 1:
+            raise ValueError("Комиссия задаётся долей больше 0 и меньше 1, например 0.003")
+        return fee, "override"
+    schedule = FeeSchedule(
+        refresh_seconds=settings.fee_refresh_seconds,
+        treat_as_fraction=settings.fee_rate_is_fraction,
+    )
+    loaded = await schedule.refresh(client)
+    if loaded:
+        return schedule.taker_rate(symbol), "trade-fees"
+    print(
+        "Предупреждение: публичные trade-fees недоступны, для прогона берётся taker 0.003",
+        file=sys.stderr,
+    )
+    return settings.default_fee_rate, "fallback"
 
 
 def _fee_label(fee: Decimal) -> str:
@@ -158,6 +191,8 @@ def _console(
     days: int,
     env: str,
     fee: Decimal,
+    fee_source: str,
+    timeframe: str,
     hold: HoldResult,
     blocks: dict[str, int],
     closed: list[Bar],
@@ -174,11 +209,14 @@ def _console(
         [
             f"Пара: {result.symbol}",
             f"Источник: {env}",
+            f"Таймфрейм: {timeframe}",
             f"Запрошено дней: {days}",
             f"Период: {start} — {end}",
-            f"Комиссия прогона: {fee}",
+            f"Комиссия прогона: {fee} ({fee_source})",
             f"Закрытых свечей: {bars}",
             f"Сделок: {perf.trades}",
+            f"Пропущено из-за издержек: {result.skipped_for_costs}",
+            f"Средние издержки на сделку: {_opt_pct(result.average_cost_fraction)}",
             f"Win rate: {win}",
             f"Profit factor: {factor}",
             f"Макс. просадка: {(result.max_drawdown * Decimal('100')):.2f}%",
@@ -211,6 +249,8 @@ def _write_json(
     blocks: dict[str, int],
     period_start: datetime,
     period_end: datetime,
+    timeframe: str,
+    fee_source: str,
 ) -> None:
     perf = result.performance
     payload = {
@@ -218,7 +258,11 @@ def _write_json(
         "env": env,
         "rest_url": rest_url,
         "fee_rate": _num(fee),
+        "fee_source": fee_source,
+        "timeframe": timeframe,
         "days": days,
+        "skipped_for_costs": result.skipped_for_costs,
+        "average_cost_fraction": _opt(result.average_cost_fraction),
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
         "bars": bars,
@@ -250,6 +294,17 @@ def _write_json(
                 "quantity": _num(trade.quantity),
                 "net_pnl": _num(trade.net_pnl),
                 "fees": _num(trade.fees),
+                "entry_fee": _num(trade.entry_fee),
+                "exit_fee": _num(trade.exit_fee),
+                "entry_spread": _num(trade.entry_spread),
+                "exit_spread": _num(trade.exit_spread),
+                "entry_book_slippage": _num(trade.entry_book_slippage),
+                "exit_book_slippage": _num(trade.exit_book_slippage),
+                "entry_paper_slippage": _num(trade.entry_paper_slippage),
+                "exit_paper_slippage": _num(trade.exit_paper_slippage),
+                "reference_entry": _num(trade.reference_entry),
+                "reference_exit": _num(trade.reference_exit),
+                "cost_fraction": _opt(trade.cost_fraction),
                 "r_multiple": _opt(trade.r_multiple),
                 "reason": trade.reason,
             }
@@ -275,7 +330,16 @@ def _write_trades(path: Path, result: BacktestResult) -> None:
                 "quantity",
                 "gross_pnl",
                 "fees",
+                "entry_fee",
+                "exit_fee",
+                "entry_spread",
+                "exit_spread",
+                "entry_book_slippage",
+                "exit_book_slippage",
+                "entry_paper_slippage",
+                "exit_paper_slippage",
                 "net_pnl",
+                "cost_fraction",
                 "r_multiple",
                 "reason",
             ]
@@ -291,7 +355,16 @@ def _write_trades(path: Path, result: BacktestResult) -> None:
                     _num(trade.quantity),
                     _num(trade.gross_pnl),
                     _num(trade.fees),
+                    _num(trade.entry_fee),
+                    _num(trade.exit_fee),
+                    _num(trade.entry_spread),
+                    _num(trade.exit_spread),
+                    _num(trade.entry_book_slippage),
+                    _num(trade.exit_book_slippage),
+                    _num(trade.entry_paper_slippage),
+                    _num(trade.exit_paper_slippage),
                     _num(trade.net_pnl),
+                    _opt(trade.cost_fraction),
                     _opt(trade.r_multiple),
                     trade.reason,
                 ]
@@ -314,6 +387,12 @@ def _opt(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return format(value, "f")
+
+
+def _opt_pct(value: Decimal | None) -> str:
+    if value is None:
+        return "—"
+    return f"{(value * Decimal('100')):.4f}%"
 
 
 if __name__ == "__main__":

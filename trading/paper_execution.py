@@ -8,12 +8,20 @@ from decimal import Decimal
 from trading.execution import Fill
 from trading.market import BookSnapshot, walk_book
 from xrocket.exceptions import UnknownOrderResultError
+from xrocket.fee_schedule import FeeSchedule
 
 
 class PaperExecution:
-    def __init__(self, *, fee_rate: Decimal, slippage_fraction: Decimal) -> None:
+    def __init__(
+        self,
+        *,
+        fee_rate: Decimal,
+        slippage_fraction: Decimal,
+        fees: FeeSchedule | None = None,
+    ) -> None:
         self._fee_rate = fee_rate
         self._slippage = slippage_fraction
+        self._fees = fees
         self._orders: dict[str, Fill] = {}
         self.buy_calls = 0
         self.sell_calls = 0
@@ -43,10 +51,11 @@ class PaperExecution:
         ask = book.best_ask
         if ask is None or not book.is_full_snapshot:
             raise ValueError("paper buy needs a full ask snapshot")
-        estimate = funds / (ask.price * (Decimal("1") + self._fee_rate))
+        rate = self._rate()
+        estimate = funds / (ask.price * (Decimal("1") + rate))
         vwap = walk_book(book.asks, estimate) or ask.price
         price = vwap * (Decimal("1") + self._slippage)
-        fee = funds * self._fee_rate / (Decimal("1") + self._fee_rate)
+        fee = funds * rate / (Decimal("1") + rate)
         base = (funds - fee) / price
         if base <= 0:
             raise ValueError("paper buy size is zero")
@@ -57,6 +66,7 @@ class PaperExecution:
             filled_quantity=base,
             average_price=price,
             fee=fee,
+            # Debit asset is unconfirmed until an order response carries feeAsset.
             fee_asset="USDT",
             funds=funds,
             size=base,
@@ -69,7 +79,7 @@ class PaperExecution:
         vwap = walk_book(book.bids, size) or bid.price
         price = vwap * (Decimal("1") - self._slippage)
         quote = size * price
-        fee = quote * self._fee_rate
+        fee = quote * self._rate()
         return Fill(
             client_order_id=client_order_id,
             exchange_order_id=f"paper-{client_order_id}",
@@ -81,3 +91,8 @@ class PaperExecution:
             funds=None,
             size=size,
         )
+
+    def _rate(self) -> Decimal:
+        if self._fees is not None:
+            return self._fees.taker_rate()
+        return self._fee_rate

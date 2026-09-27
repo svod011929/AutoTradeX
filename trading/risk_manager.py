@@ -1,7 +1,10 @@
 """Pre-order checklist and risk-based size.
 
-Size is risk_amount / stop distance, then trimmed by balance, fees, exchange
-limits, and the book. The whole available balance is never spent.
+The size is the risk budget divided by the cash lost if the stop fills,
+including the entry fee, the exit fee, and the expected book and paper
+slippage. The 0.3% slippage cap stays a gate. The whole available balance
+is never spent. A trade whose net reward/risk after those costs is below
+the configured threshold is skipped.
 """
 
 from dataclasses import dataclass
@@ -41,6 +44,8 @@ class RiskInput:
     max_spread_fraction: Decimal
     max_slippage_fraction: Decimal
     cash_reserve_fraction: Decimal
+    paper_slippage_fraction: Decimal = Decimal("0")
+    min_net_reward_risk: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True)
@@ -59,9 +64,16 @@ class RiskManager:
         reasons: list[str] = []
         self._gates(item, reasons)
         stop, take_profit = self._targets(item, reasons)
-        size, funds = self._size(item, stop, reasons) if stop is not None else (None, None)
+        size, funds = self._size(item, stop, take_profit, reasons) if stop is not None and take_profit is not None else (None, None)
         if size is None or funds is None:
-            if "quantity" not in reasons and "precision" not in reasons and stop is not None:
+            if (
+                "quantity" not in reasons
+                and "precision" not in reasons
+                and "net_rr" not in reasons
+                and "sl" not in reasons
+                and "tp" not in reasons
+                and stop is not None
+            ):
                 reasons.append("quantity")
         self._book_checks(item, size, reasons)
         if reasons:
@@ -122,19 +134,36 @@ class RiskManager:
         self,
         item: RiskInput,
         stop: Decimal | None,
+        take_profit: Decimal | None,
         reasons: list[str],
     ) -> tuple[Decimal | None, Decimal | None]:
-        if stop is None or "balance" in reasons or "risk" in reasons:
+        if stop is None or take_profit is None or "balance" in reasons or "risk" in reasons:
             return None, None
         profile = RISK_PROFILES[item.profile]
-        distance = item.entry - stop
-        if distance <= 0:
+        provisional = self._loss_quote(item, stop, take_profit, Decimal("0"))
+        if provisional is None:
+            reasons.append("sl")
+            return None, None
+        _entry_px, loss, _profit = provisional
+        if loss <= 0:
             reasons.append("sl")
             return None, None
         risk_amount = item.equity * profile.risk_per_trade
-        raw_size = risk_amount / distance
-        size = floor_to_increment(raw_size, item.symbol.base_increment)
-        size, funds = self._fit_balance(item, size)
+        probe = floor_to_increment(risk_amount / loss, item.symbol.base_increment)
+        book_slip = _entry_book_slippage(item, probe)
+        priced = self._loss_quote(item, stop, take_profit, book_slip)
+        if priced is None:
+            reasons.append("sl")
+            return None, None
+        entry_px, loss, profit = priced
+        if loss <= 0:
+            reasons.append("sl")
+            return None, None
+        if item.min_net_reward_risk > 0 and (profit <= 0 or profit / loss < item.min_net_reward_risk):
+            reasons.append("net_rr")
+            return None, None
+        size = floor_to_increment(risk_amount / loss, item.symbol.base_increment)
+        size, funds = self._fit_balance(item, size, entry_px)
         if size is None or funds is None:
             reasons.append("balance")
             return None, None
@@ -149,14 +178,39 @@ class RiskManager:
             return None, None
         return size, funds
 
-    def _fit_balance(self, item: RiskInput, size: Decimal) -> tuple[Decimal | None, Decimal | None]:
+    def _loss_quote(
+        self,
+        item: RiskInput,
+        stop: Decimal,
+        take_profit: Decimal,
+        book_slippage: Decimal,
+    ) -> tuple[Decimal, Decimal, Decimal] | None:
+        entry_px, stop_px, take_profit_px = execution_prices(
+            item.entry,
+            stop,
+            take_profit,
+            book_slippage=book_slippage,
+            paper_slippage=item.paper_slippage_fraction,
+        )
+        if stop_px <= 0 or stop_px >= entry_px:
+            return None
+        loss = stop_loss_per_unit(entry_px, stop_px, item.fee_rate)
+        profit = take_profit_per_unit(entry_px, take_profit_px, item.fee_rate)
+        return entry_px, loss, profit
+
+    def _fit_balance(
+        self,
+        item: RiskInput,
+        size: Decimal,
+        entry_px: Decimal,
+    ) -> tuple[Decimal | None, Decimal | None]:
         reserve = item.available_quote * item.cash_reserve_fraction
         cap = item.available_quote - reserve
         if cap <= 0 or cap >= item.available_quote:
             cap = item.available_quote - quote_step(item.symbol.quote_min_size)
         if cap <= 0:
             return None, None
-        unit = item.entry * (Decimal("1") + item.fee_rate)
+        unit = entry_px * (Decimal("1") + item.fee_rate)
         if unit <= 0:
             return None, None
         affordable = floor_to_increment(cap / unit, item.symbol.base_increment)
@@ -201,3 +255,40 @@ def describe_size(size: Decimal | None) -> str:
     if size is None:
         return "none"
     return format_decimal(size)
+
+
+def execution_prices(
+    entry: Decimal,
+    stop: Decimal,
+    take_profit: Decimal,
+    *,
+    book_slippage: Decimal,
+    paper_slippage: Decimal,
+) -> tuple[Decimal, Decimal, Decimal]:
+    """Entry pays the ask walk and paper slippage. Stop and take pay the bid side once."""
+    up = (Decimal("1") + book_slippage) * (Decimal("1") + paper_slippage)
+    down = (Decimal("1") - book_slippage) * (Decimal("1") - paper_slippage)
+    return entry * up, stop * down, take_profit * down
+
+
+def stop_loss_per_unit(entry_px: Decimal, stop_px: Decimal, fee_rate: Decimal) -> Decimal:
+    """Quote lost on one base unit if the stop fills, including both fees."""
+    return (entry_px - stop_px) + (fee_rate * entry_px) + (fee_rate * stop_px)
+
+
+def take_profit_per_unit(entry_px: Decimal, take_profit_px: Decimal, fee_rate: Decimal) -> Decimal:
+    """Quote gained on one base unit if the take-profit fills, after both fees."""
+    return (take_profit_px - entry_px) - (fee_rate * entry_px) - (fee_rate * take_profit_px)
+
+
+def _entry_book_slippage(item: RiskInput, size: Decimal) -> Decimal:
+    ask = item.book.best_ask
+    if ask is None or ask.price <= 0 or size <= 0:
+        return Decimal("0")
+    vwap = walk_book(item.book.asks, size)
+    if vwap is None:
+        return Decimal("0")
+    slip = (vwap - ask.price) / ask.price
+    if slip <= 0:
+        return Decimal("0")
+    return slip

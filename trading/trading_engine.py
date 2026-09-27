@@ -28,6 +28,8 @@ from trading.position_manager import PositionManager
 from trading.risk_manager import RiskInput, RiskManager
 from trading.signal_engine import SignalEngine
 from trading.strategy_engine import StrategyParams, evaluate
+from xrocket.fee_schedule import FeeSchedule
+from xrocket.rest_client import XRocketRestClient
 
 logger = logging.getLogger("autotrade.engine")
 
@@ -71,10 +73,14 @@ class TradingEngine:
         clock: Callable[[], datetime] | None = None,
         ws_healthy: Callable[[], bool] | None = None,
         reconcile_each_cycle: bool = True,
+        fees: FeeSchedule | None = None,
+        public_client: XRocketRestClient | None = None,
     ) -> None:
         self._factory = session_factory
         self._settings = settings
         self._user_id = user_id
+        self._fees = fees
+        self._public_client = public_client
         self._orders = orders
         self._positions = positions
         self._reconciliation = reconciliation
@@ -131,6 +137,7 @@ class TradingEngine:
 
     async def run_cycle(self, *, now: datetime | None = None) -> CycleReport:
         moment = ensure_aware(now or self._clock())
+        await self._refresh_fees(moment)
         await self._watchdog.beat("trading")
         if self._reconcile_each_cycle:
             await self._reconciliation.reconcile()
@@ -353,7 +360,7 @@ class TradingEngine:
         cooldown = False
         if latest is not None:
             cooldown = ensure_aware(now) - ensure_aware(latest) < timedelta(minutes=runtime.cooldown_minutes)
-        fee = fee_rate_to_fraction(self._settings.default_fee_rate, self._settings.fee_rate_is_fraction)
+        fee = self._taker_fee(symbol)
         return self._risk.assess(
             RiskInput(
                 equity=equity,
@@ -381,8 +388,22 @@ class TradingEngine:
                 max_spread_fraction=self._settings.max_spread_fraction,
                 max_slippage_fraction=self._settings.max_slippage_fraction,
                 cash_reserve_fraction=self._settings.cash_reserve_fraction,
+                paper_slippage_fraction=self._settings.paper_slippage_fraction,
+                min_net_reward_risk=self._settings.min_net_reward_risk,
             )
         )
+
+    async def _refresh_fees(self, now: datetime) -> None:
+        if self._fees is None or self._public_client is None:
+            return
+        if not self._fees.needs_refresh(now):
+            return
+        await self._fees.refresh(self._public_client, now)
+
+    def _taker_fee(self, symbol: str) -> Decimal:
+        if self._fees is not None:
+            return self._fees.taker_rate(symbol)
+        return fee_rate_to_fraction(self._settings.default_fee_rate, self._settings.fee_rate_is_fraction)
 
     async def _load_runtime(self, now: datetime) -> _Runtime | None:
         del now

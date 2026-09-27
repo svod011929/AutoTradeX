@@ -35,6 +35,7 @@ from trading.order_manager import OrderManager
 from trading.paper_execution import PaperExecution
 from trading.position_manager import PositionManager
 from trading.trading_engine import TradingEngine
+from xrocket.fee_schedule import FeeSchedule
 from xrocket.rest_client import XRocketRestClient
 
 logger = logging.getLogger("autotrade.paper")
@@ -75,7 +76,18 @@ async def _run(settings: Settings, cycles: int | None) -> int:
         await HeartbeatRepository().beat(session, "bootstrap", status="ok", details="paper boot")
     await _ensure_paper_user(settings)
     fee = fee_rate_to_fraction(settings.default_fee_rate, settings.fee_rate_is_fraction)
-    execution = PaperExecution(fee_rate=fee, slippage_fraction=settings.paper_slippage_fraction)
+    fees = FeeSchedule(
+        refresh_seconds=settings.fee_refresh_seconds,
+        treat_as_fraction=settings.fee_rate_is_fraction,
+    )
+    client = XRocketRestClient.from_settings(settings, token=None)
+    await client.__aenter__()
+    await fees.refresh(client)
+    execution = PaperExecution(
+        fee_rate=fee,
+        slippage_fraction=settings.paper_slippage_fraction,
+        fees=fees,
+    )
     pending: dict[str, ReconciliationService] = {}
 
     async def _on_unknown(client_order_id: str) -> None:
@@ -90,8 +102,6 @@ async def _run(settings: Settings, cycles: int | None) -> int:
     )
     positions = PositionManager(session_factory, orders, after_commit=notifications.attempt)
     watchdog = Watchdog(session_factory)
-    client = XRocketRestClient.from_settings(settings, token=None)
-    await client.__aenter__()
     feed = PublicRestFeed(client, depth=settings.orderbook_depth)
     user_id = await _paper_user_id()
     listed_ok = await _keep_listed_symbols(client, user_id, settings)
@@ -108,6 +118,8 @@ async def _run(settings: Settings, cycles: int | None) -> int:
         reconciliation=reconciliation,
         watchdog=watchdog,
         feed=feed,
+        fees=fees,
+        public_client=client,
     )
     engine.block_entries()
     worker = asyncio.create_task(notifications.serve(watchdog=watchdog))

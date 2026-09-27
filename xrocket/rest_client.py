@@ -177,12 +177,12 @@ class XRocketRestClient:
         return OrderBook.from_payload(body)
 
     async def get_trade_fees(self, symbols: list[str] | None = None) -> list[TradeFee]:
-        # TODO: symbols array wire format is NOT DOCUMENTED (same as ticker). Repeated keys.
-        # TODO: the fee unit is NOT DOCUMENTED. fee_rate_is_fraction controls how "0.01" is read.
+        # symbols array wire format is NOT DOCUMENTED. Repeated keys, same as ticker.
+        # Live public payload: fees[].standard.taker "0.003" and maker "0.002" are fractions.
         body = await self._request(
             "GET",
             "/api/v1/trade-fees",
-            private=True,
+            private=False,
             params=_repeated("symbols", symbols),
             retry=True,
         )

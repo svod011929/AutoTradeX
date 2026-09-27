@@ -1,4 +1,6 @@
-"""Trend-following LONG signals on closed 15m bars.
+"""Trend-following LONG signals on closed bars of the configured timeframe.
+
+Live mode keeps the default timeframe at 15m. A backtest can pass 1h or 4h.
 
 Every buy rule has to hold at once. A low RSI on its own is not a buy.
 Bars that are still open are ignored.

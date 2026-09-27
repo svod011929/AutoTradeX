@@ -22,6 +22,7 @@ from trading.order_manager import OrderManager
 from trading.paper_execution import PaperExecution
 from trading.position_manager import PositionManager
 from trading.trading_engine import TradingEngine
+from xrocket.fee_schedule import FeeSchedule
 from xrocket.rest_client import XRocketRestClient
 
 logger = logging.getLogger("autotrade.telegram")
@@ -100,12 +101,17 @@ async def _trade_loop(
     notifications: NotificationService,
 ) -> None:
     feed = PublicRestFeed(client, depth=settings.orderbook_depth)
+    fees = FeeSchedule(
+        refresh_seconds=settings.fee_refresh_seconds,
+        treat_as_fraction=settings.fee_rate_is_fraction,
+    )
+    await fees.refresh(client)
     stacks: dict[int, TradingEngine] = {}
     while not stop.is_set():
         for user_id in await _started_user_ids():
             engine = stacks.get(user_id)
             if engine is None:
-                engine = _engine_for(user_id, settings, feed, notifications)
+                engine = _engine_for(user_id, settings, feed, notifications, fees, client)
                 stacks[user_id] = engine
             try:
                 await engine.run_cycle()
@@ -122,10 +128,16 @@ def _engine_for(
     settings: Settings,
     feed: PublicRestFeed,
     notifications: NotificationService,
+    fees: FeeSchedule,
+    client: XRocketRestClient,
 ) -> TradingEngine:
     factory = get_sessionmaker()
     fee = fee_rate_to_fraction(settings.default_fee_rate, settings.fee_rate_is_fraction)
-    execution = PaperExecution(fee_rate=fee, slippage_fraction=settings.paper_slippage_fraction)
+    execution = PaperExecution(
+        fee_rate=fee,
+        slippage_fraction=settings.paper_slippage_fraction,
+        fees=fees,
+    )
     holder: dict[str, ReconciliationService] = {}
 
     async def on_unknown(client_order_id: str) -> None:
@@ -144,6 +156,8 @@ def _engine_for(
         reconciliation=reconciliation,
         watchdog=Watchdog(factory),
         feed=feed,
+        fees=fees,
+        public_client=client,
     )
     engine.allow_entries()
     return engine

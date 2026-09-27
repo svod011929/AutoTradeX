@@ -1,6 +1,7 @@
 """Shared fixtures for database tests."""
 
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,9 @@ def make_settings(tmp_path: Path, **overrides: object) -> Settings:
         "sqlite_busy_timeout": 5000,
         "sqlite_wal_autocheckpoint": 1000,
         "backup_retention": 7,
+        # The synthetic entry series is tighter than fees plus slippage.
+        # Order-flow tests keep the cost gate off. Settings() itself stays at 1.5.
+        "min_net_reward_risk": Decimal("0"),
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
