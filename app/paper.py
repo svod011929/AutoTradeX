@@ -14,7 +14,12 @@ from pathlib import Path
 from sqlalchemy import select
 
 from core.config import Settings
-from core.trading_policy import fee_rate_to_fraction
+from core.trading_policy import (
+    ExecutionModeName,
+    fee_rate_to_fraction,
+    parse_symbols,
+    select_listed_symbols,
+)
 from database.integrity import check_integrity
 from database.models import BotSettings, Strategy, StrategySettings, User
 from database.repositories.heartbeats import HeartbeatRepository
@@ -89,6 +94,11 @@ async def _run(settings: Settings, cycles: int | None) -> int:
     await client.__aenter__()
     feed = PublicRestFeed(client, depth=settings.orderbook_depth)
     user_id = await _paper_user_id()
+    listed_ok = await _keep_listed_symbols(client, user_id, settings)
+    if not listed_ok:
+        await client.close()
+        await close_db()
+        return 1
     engine = TradingEngine(
         session_factory=session_factory,
         settings=settings,
@@ -173,6 +183,43 @@ async def _run(settings: Settings, cycles: int | None) -> int:
     return 0
 
 
+def _as_mode(value: str) -> ExecutionModeName:
+    match value:
+        case "paper":
+            return "paper"
+        case "testnet":
+            return "testnet"
+        case "mainnet":
+            return "mainnet"
+        case _:
+            return "paper"
+
+
+async def _keep_listed_symbols(client: XRocketRestClient, user_id: int, settings: Settings) -> bool:
+    """Keep only pairs the exchange lists. Refuse to start when none remain."""
+    del settings
+    try:
+        listed = {item.symbol for item in await client.get_symbols()}
+    except Exception as exc:
+        logger.error("не удалось получить список пар с биржи: %s", exc)
+        return False
+    factory = get_sessionmaker()
+    async with factory() as session:
+        bot = await session.scalar(select(BotSettings).where(BotSettings.user_id == user_id))
+        if bot is None:
+            logger.error("настройки paper-пользователя не найдены")
+            return False
+        selection = select_listed_symbols(parse_symbols(bot.enabled_symbols), listed, mode=_as_mode(bot.execution_mode))
+        for warning in selection.warnings:
+            logger.warning("%s", warning)
+        if selection.refusal is not None:
+            logger.error("%s", selection.refusal)
+            return False
+        bot.enabled_symbols = ",".join(selection.kept)
+        await session.commit()
+    return True
+
+
 async def _paper_user_id() -> int:
     factory = get_sessionmaker()
     async with factory() as session:
@@ -196,7 +243,7 @@ async def _ensure_paper_user(settings: Settings) -> None:
                 user_id=user.id,
                 execution_mode="paper",
                 risk_profile=settings.default_risk,
-                enabled_symbols=settings.default_symbols,
+                enabled_symbols=settings.resolved_symbols(),
                 timeframe=settings.default_timeframe,
                 is_paused=False,
                 emergency_stop=False,

@@ -279,12 +279,14 @@ class BotSettings(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     execution_mode: Mapped[str] = mapped_column(String(16), default=ExecutionMode.PAPER.value, nullable=False)
     risk_profile: Mapped[str] = mapped_column(String(16), default="medium", nullable=False)
-    enabled_symbols: Mapped[str] = mapped_column(Text, default="TON-USDT,BTC-USDT", nullable=False)
+    enabled_symbols: Mapped[str] = mapped_column(Text, default="BTC-USDT,ETH-USDT", nullable=False)
     timeframe: Mapped[str] = mapped_column(String(16), default="15m", nullable=False)
     is_paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     emergency_stop: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     live_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     paper_cash: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    paper_seed: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    close_positions_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False

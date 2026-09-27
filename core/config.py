@@ -9,16 +9,24 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from core.trading_policy import (
     ALLOW_EXCHANGE_ORDERS_DEFAULT,
-    DEFAULT_ATR_SL_MULTIPLIER,
-    DEFAULT_MIN_VOLUME_RATIO,
     CANDLE_CLOSE_GRACE_SECONDS,
+    CASH_RESERVE_FRACTION,
+    DEFAULT_ATR_SL_MULTIPLIER,
     DEFAULT_FEE_RATE,
+    DEFAULT_MIN_VOLUME_RATIO,
     DEFAULT_TAKE_PROFIT_RR,
     DEFAULT_TRAILING_ACTIVATION_ATR,
     DEFAULT_TRAILING_ATR_MULTIPLIER,
     EXECUTION_MODE_DEFAULT,
     FEE_RATE_IS_FRACTION_DEFAULT,
+    MAX_SLIPPAGE_FRACTION,
+    MAX_SPREAD_FRACTION,
+    PAPER_SLIPPAGE_FRACTION,
+    RSI_ENTRY_MAX,
+    RSI_ENTRY_MIN,
+    VOLUME_MA_PERIOD,
     ExecutionModeName,
+    default_symbols_for_mode,
     exchange_orders_allowed as orders_allowed_for_mode,
 )
 
@@ -108,16 +116,16 @@ class Settings(BaseSettings):
     candle_close_grace_seconds: int = CANDLE_CLOSE_GRACE_SECONDS
     default_fee_rate: Decimal = DEFAULT_FEE_RATE
     orderbook_depth: int = 50
-    max_spread_fraction: Decimal = Decimal("0.005")
-    max_slippage_fraction: Decimal = Decimal("0.003")
-    paper_slippage_fraction: Decimal = Decimal("0.001")
-    cash_reserve_fraction: Decimal = Decimal("0.02")
-    rsi_entry_min: Decimal = Decimal("30")
-    rsi_entry_max: Decimal = Decimal("70")
-    volume_ma_period: int = 20
+    max_spread_fraction: Decimal = MAX_SPREAD_FRACTION
+    max_slippage_fraction: Decimal = MAX_SLIPPAGE_FRACTION
+    paper_slippage_fraction: Decimal = PAPER_SLIPPAGE_FRACTION
+    cash_reserve_fraction: Decimal = CASH_RESERVE_FRACTION
+    rsi_entry_min: Decimal = RSI_ENTRY_MIN
+    rsi_entry_max: Decimal = RSI_ENTRY_MAX
+    volume_ma_period: int = VOLUME_MA_PERIOD
     notification_max_attempts: int = 4
     paper_starting_equity: Decimal = Decimal("1000")
-    default_symbols: str = "TON-USDT,BTC-USDT"
+    default_symbols: str = ""
 
     @field_validator("log_level")
     @classmethod
@@ -213,6 +221,13 @@ class Settings(BaseSettings):
 
     def exchange_orders_allowed(self) -> bool:
         return orders_allowed_for_mode(self.execution_mode, self.allow_exchange_orders)
+
+    def resolved_symbols(self) -> str:
+        """Explicit DEFAULT_SYMBOLS wins. An empty value follows the execution mode."""
+        raw = self.default_symbols.strip()
+        if raw == "":
+            return default_symbols_for_mode(self.execution_mode)
+        return raw
 
     @property
     def admin_id_list(self) -> list[int]:

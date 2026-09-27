@@ -1,1 +1,1 @@
-"""Telegram bot package. Handlers are added in a later stage."""
+"""Telegram interface. Handlers read state and store commands. The core trades."""

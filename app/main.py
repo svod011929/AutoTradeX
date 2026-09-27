@@ -1,7 +1,8 @@
 """Process entry point.
 
 Without flags this boots the database and exits. ``--paper`` runs the paper
-engine on public market data and does not place exchange orders.
+engine on public market data. ``--telegram`` runs the menu and the same paper
+engine. Neither path places exchange orders.
 """
 
 import argparse
@@ -10,6 +11,7 @@ import logging
 from pathlib import Path
 
 from app.paper import run_paper
+from bot.runner import run_telegram
 
 from alembic import command
 from alembic.config import Config
@@ -87,14 +89,25 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="With --paper, stop after this many cycles. Omit to run until SIGINT or SIGTERM.",
     )
+    parser.add_argument(
+        "--telegram",
+        action="store_true",
+        help="Run the Telegram menu and a paper trading loop. Exchange orders stay off.",
+    )
     return parser
 
 
 def main() -> None:
     args = _parser().parse_args()
     settings = _configure()
+    if args.paper and args.telegram:
+        logger.error("Укажите один режим: --paper или --telegram")
+        raise SystemExit(2)
     if args.cycles is not None and not args.paper:
         logger.error("--cycles is used together with --paper")
+        raise SystemExit(2)
+    if args.telegram and settings.bot_token.get_secret_value().strip() == "":
+        logger.error("BOT_TOKEN пуст. Укажите токен бота в окружении.")
         raise SystemExit(2)
     if not is_valid_fernet_key(settings.encryption_key.get_secret_value()):
         logger.error("ENCRYPTION_KEY is missing or is not a Fernet key")
@@ -108,6 +121,9 @@ def main() -> None:
     if args.paper:
         settings = settings.model_copy(update={"execution_mode": "paper", "allow_exchange_orders": False})
         raise SystemExit(asyncio.run(run_paper(settings, cycles=args.cycles)))
+    if args.telegram:
+        settings = settings.model_copy(update={"allow_exchange_orders": False})
+        raise SystemExit(asyncio.run(run_telegram(settings)))
     raise SystemExit(asyncio.run(run()))
 
 

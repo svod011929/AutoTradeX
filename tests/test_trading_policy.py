@@ -4,22 +4,37 @@ from decimal import Decimal
 
 from core.config import Settings
 from core.trading_policy import (
+    ATR_HAS_UPPER_BOUND,
     AUTO_TRANSFER_FUNDING_TO_TRADING,
     CANDLE_CLOSE_GRACE_SECONDS,
+    CASH_RESERVE_FRACTION,
     DEFAULT_ATR_SL_MULTIPLIER,
     DEFAULT_FEE_RATE,
     DEFAULT_MIN_VOLUME_RATIO,
     DEFAULT_TAKE_PROFIT_RR,
     DEFAULT_TRAILING_ACTIVATION_ATR,
     DEFAULT_TRAILING_ATR_MULTIPLIER,
+    MAINNET_CONFIRM_PHRASE,
+    MAINNET_DEFAULT_SYMBOLS,
     MARKET_ENTRY_FIELD,
     MARKET_EXIT_FIELD,
     MARKET_TIME_IN_FORCE,
+    MAX_SLIPPAGE_FRACTION,
+    MAX_SPREAD_FRACTION,
+    PAPER_DEFAULT_SYMBOLS,
+    PAPER_SLIPPAGE_FRACTION,
+    RSI_ENTRY_MAX,
+    RSI_ENTRY_MIN,
+    TESTNET_DEFAULT_SYMBOLS,
     USE_FULL_ORDERBOOK_SNAPSHOT,
     USE_REST_TRADING_BALANCE,
+    VOLUME_MA_PERIOD,
+    default_symbols_for_mode,
     exchange_orders_allowed,
     fee_rate_to_fraction,
     generate_client_order_id,
+    parse_symbols,
+    select_listed_symbols,
     trading_balance_warning,
     validate_client_order_id,
 )
@@ -95,3 +110,47 @@ def test_stage4_exit_candle_fee_and_book_decisions() -> None:
     assert settings.notification_max_attempts == 4
     assert settings.orderbook_depth == 50
     assert settings.paper_starting_equity == Decimal("1000")
+
+
+def test_stage5_thresholds_and_pair_defaults() -> None:
+    assert RSI_ENTRY_MIN == Decimal("30")
+    assert RSI_ENTRY_MAX == Decimal("70")
+    assert VOLUME_MA_PERIOD == 20
+    assert MAX_SPREAD_FRACTION == Decimal("0.005")
+    assert MAX_SLIPPAGE_FRACTION == Decimal("0.003")
+    assert PAPER_SLIPPAGE_FRACTION == Decimal("0.001")
+    assert CASH_RESERVE_FRACTION == Decimal("0.02")
+    assert ATR_HAS_UPPER_BOUND is False
+    assert PAPER_DEFAULT_SYMBOLS == ("BTC-USDT", "ETH-USDT")
+    assert TESTNET_DEFAULT_SYMBOLS == ("BTC-USDT", "ETH-USDT")
+    assert MAINNET_DEFAULT_SYMBOLS == ("TON-USDT",)
+    assert MAINNET_CONFIRM_PHRASE == "START LIVE"
+    assert default_symbols_for_mode("paper") == "BTC-USDT,ETH-USDT"
+    assert default_symbols_for_mode("testnet") == "BTC-USDT,ETH-USDT"
+    assert default_symbols_for_mode("mainnet") == "TON-USDT"
+    paper = Settings(_env_file=None, execution_mode="paper", default_symbols="")
+    assert paper.resolved_symbols() == "BTC-USDT,ETH-USDT"
+    explicit = Settings(_env_file=None, execution_mode="paper", default_symbols="SOL-USDT")
+    assert explicit.resolved_symbols() == "SOL-USDT"
+    assert parse_symbols(" btc-usdt, BTC-USDT, eth-usdt ") == ["BTC-USDT", "ETH-USDT"]
+
+    listed = {"BTC-USDT", "ETH-USDT"}
+    dropped = select_listed_symbols(["TON-USDT", "BTC-USDT"], listed, mode="paper")
+    assert dropped.kept == ("BTC-USDT",)
+    assert dropped.dropped == ("TON-USDT",)
+    assert dropped.refusal is None
+    assert any("TON-USDT" in line for line in dropped.warnings)
+
+    empty = select_listed_symbols(["TON-USDT"], listed, mode="paper")
+    assert empty.kept == ()
+    assert empty.refusal is not None
+    assert "Запуск отменён" in empty.refusal
+
+    mainnet = select_listed_symbols(["TON-USDT", "BTC-USDT"], listed, mode="mainnet")
+    assert mainnet.kept == ("BTC-USDT",)
+    assert mainnet.refusal is not None
+    assert "TON-USDT" in mainnet.refusal
+
+    mainnet_ok = select_listed_symbols(["BTC-USDT"], {"BTC-USDT", "TON-USDT"}, mode="mainnet")
+    assert mainnet_ok.kept == ("BTC-USDT",)
+    assert mainnet_ok.refusal is None

@@ -50,8 +50,10 @@ class _Runtime:
     emergency_stop: bool
     cooldown_minutes: int
     cash: Decimal
+    cash_seed: Decimal
     activation_atr: Decimal
     trail_atr: Decimal
+    close_positions_requested: bool
 
 
 class TradingEngine:
@@ -144,6 +146,7 @@ class TradingEngine:
         for symbol in runtime.symbols:
             snapshots[symbol] = await self._snapshot(symbol, runtime.timeframe, moment)
         self._seen = snapshots
+        protections.extend(await self._close_if_requested(runtime, snapshots))
         for symbol in runtime.symbols:
             snapshot = snapshots[symbol]
             fresh = self._fresh(snapshot)
@@ -402,7 +405,8 @@ class TradingEngine:
                 settings_row.trailing_activation_atr if settings_row is not None else self._settings.trailing_activation_atr
             )
             trail = settings_row.trailing_atr_multiplier if settings_row is not None else self._settings.trailing_atr_multiplier
-            cash = await _paper_cash(session, self._user_id, self._settings.paper_starting_equity)
+            seed = bot.paper_seed if bot.paper_seed is not None else self._settings.paper_starting_equity
+            cash = await _paper_cash(session, self._user_id, seed)
             return _Runtime(
                 strategy_id=None if strategy is None else strategy.id,
                 params=params,
@@ -413,13 +417,52 @@ class TradingEngine:
                 emergency_stop=bot.emergency_stop,
                 cooldown_minutes=settings_row.cooldown_minutes if settings_row is not None else self._settings.cooldown_minutes,
                 cash=cash,
+                cash_seed=seed,
                 activation_atr=activation,
                 trail_atr=trail,
+                close_positions_requested=bot.close_positions_requested,
             )
+
+    async def _close_if_requested(self, runtime: _Runtime, snapshots: dict[str, MarketSnapshot]) -> list[str]:
+        """A Telegram STOP command asks the core to close. The handler does not sell."""
+        if not runtime.close_positions_requested:
+            return []
+        open_rows = await self._positions.open_positions(self._user_id)
+        closed: list[str] = []
+        still_open = False
+        for position in open_rows:
+            snapshot = snapshots.get(position.symbol)
+            bid = None if snapshot is None else snapshot.book.best_bid
+            if snapshot is None or not self._fresh(snapshot) or snapshot.rules is None or bid is None:
+                still_open = True
+                continue
+            done = await self._positions.close_long(
+                position_id=position.id,
+                price=bid.price,
+                book=snapshot.book,
+                symbol_rules=snapshot.rules,
+                reason="emergency",
+            )
+            if done:
+                closed.append(position.symbol)
+            else:
+                still_open = True
+        if not still_open:
+            await self._clear_close_request()
+            runtime.close_positions_requested = False
+        return closed
+
+    async def _clear_close_request(self) -> None:
+        async with self._factory() as session:
+            bot = await session.scalar(select(BotSettings).where(BotSettings.user_id == self._user_id))
+            if bot is None:
+                return
+            bot.close_positions_requested = False
+            await session.commit()
 
     async def _sync_cash(self, runtime: _Runtime) -> None:
         async with self._factory() as session:
-            cash = await _paper_cash(session, self._user_id, self._settings.paper_starting_equity)
+            cash = await _paper_cash(session, self._user_id, runtime.cash_seed)
             bot = await session.scalar(select(BotSettings).where(BotSettings.user_id == self._user_id))
             if bot is None:
                 return
