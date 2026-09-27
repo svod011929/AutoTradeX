@@ -1,1 +1,1 @@
-"""Trading package stub. Not implemented in stages 1-2."""
+"""Paper trading: indicators, strategy, risk, orders, and positions."""

@@ -2,7 +2,7 @@
 
 Telegram-бот автоторговли через xRocket Exchange API. Прибыль не гарантируется.
 
-Сейчас в репозитории этапы 1–3: разбор официального API (`docs/XROCKET_API.md`), SQLite и клиенты REST/WebSocket. Торговля и Telegram-интерфейс ещё не запущены. `python -m app.main` поднимает базу, прогоняет миграции и `PRAGMA integrity_check`, затем выходит.
+Сейчас в репозитории этапы 1–4: разбор API, SQLite, клиенты REST/WebSocket и бумажная торговля. Telegram-интерфейс и бэктест ещё не сделаны. `python -m app.main` поднимает базу и выходит. `python -m app.main --paper` крутит движок на публичных данных testnet и ордера на биржу не отправляет.
 
 ## Стек
 
@@ -18,12 +18,15 @@ cp .env.example .env
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Вставьте напечатанный ключ в `ENCRYPTION_KEY` в `.env`. Токен бота и токен xRocket для обычного запуска не нужны: торговля не стартует.
+Вставьте напечатанный ключ в `ENCRYPTION_KEY` в `.env`. Токен бота и токен xRocket для paper не нужны: публичные свечи и стакан открыты, ордера не отправляются.
 
 ```bash
 python -m app.main
+python -m app.main --paper --cycles 1
 pytest
 ```
+
+`--paper` без `--cycles` работает, пока процесс не получит SIGINT или SIGTERM. Открытые бумажные позиции при остановке не закрываются.
 
 Проверка testnet только чтением (символы, свечи, балансы, без ордеров):
 
@@ -50,8 +53,10 @@ docker compose up -d --build
 ## Что уже есть
 
 - `docs/XROCKET_API.md` — REST, WebSocket, ошибки, лимиты, пробелы документации.
-- `xrocket/` — REST и WebSocket. Свечи и стакан в SQLite из сокета не пишутся. Таймаут создания ордера не приводит к повторному POST.
-- Схема SQLite: пользователи, аккаунты xRocket, стратегии и настройки, позиции, ордера, сигналы, сделки, дневная статистика, очередь уведомлений, настройки бота, системные события, heartbeats, свечи.
+- `xrocket/` — REST и WebSocket. Свечи и стакан в SQLite из сокета не пишутся. Таймаут создания ордера не приводит к повторному POST. Выход — рыночный SELL с `size`.
+- `trading/` — индикаторы, тренд 15m (только LONG), риск, бумажное исполнение, ордера и позиции. Ордер создаётся только в order manager, `clientOrderId` пишется до запроса.
+- `python -m app.main --paper` — цикл на публичном REST testnet. Капитал бумажный, с `PAPER_STARTING_EQUITY`.
+- Схема SQLite: пользователи, аккаунты xRocket, стратегии и настройки, позиции, ордера, сигналы, сделки, дневная статистика, очередь уведомлений, настройки бота, системные события, heartbeats, свечи. У настроек бота есть `paper_cash`.
 - Повтор при `database is locked`: 100 мс, 250 мс, 500 мс, 1 с, 2 с, затем ошибка.
 - Проверка целостности и аварийный бэкап, если `integrity_check` не равен `ok`.
 
@@ -61,4 +66,4 @@ docker compose up -d --build
 pytest
 ```
 
-`tests/test_sqlite.py`, `tests/test_backup.py`, `tests/test_security.py`, `tests/test_rest_client.py`, `tests/test_websocket.py`, `tests/test_trading_policy.py`.
+`tests/test_sqlite.py`, `tests/test_backup.py`, `tests/test_security.py`, `tests/test_rest_client.py`, `tests/test_websocket.py`, `tests/test_trading_policy.py`, плюс тесты индикаторов, стратегии, риска, ордеров, позиций, сверки, уведомлений и пяти критических сценариев.

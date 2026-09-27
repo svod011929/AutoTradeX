@@ -1,1 +1,1 @@
-"""Background services. Trading and notification workers come in later stages."""
+"""Background services: notifications, reconciliation, market data, and lifecycle."""

@@ -1,11 +1,15 @@
-"""Process entry point for stages 1–2: database boot, integrity check, clean exit.
+"""Process entry point.
 
-Trading, Telegram, and the WebSocket client are not started here.
+Without flags this boots the database and exits. ``--paper`` runs the paper
+engine on public market data and does not place exchange orders.
 """
 
+import argparse
 import asyncio
 import logging
 from pathlib import Path
+
+from app.paper import run_paper
 
 from alembic import command
 from alembic.config import Config
@@ -70,8 +74,28 @@ async def run() -> int:
         await close_db()
 
 
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="python -m app.main")
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help="Run paper trading on public market data. Exchange orders stay off.",
+    )
+    parser.add_argument(
+        "--cycles",
+        type=int,
+        default=None,
+        help="With --paper, stop after this many cycles. Omit to run until SIGINT or SIGTERM.",
+    )
+    return parser
+
+
 def main() -> None:
+    args = _parser().parse_args()
     settings = _configure()
+    if args.cycles is not None and not args.paper:
+        logger.error("--cycles is used together with --paper")
+        raise SystemExit(2)
     if not is_valid_fernet_key(settings.encryption_key.get_secret_value()):
         logger.error("ENCRYPTION_KEY is missing or is not a Fernet key")
         raise SystemExit(1)
@@ -81,6 +105,9 @@ def main() -> None:
     except Exception:
         logger.exception("database migration failed")
         raise SystemExit(1) from None
+    if args.paper:
+        settings = settings.model_copy(update={"execution_mode": "paper", "allow_exchange_orders": False})
+        raise SystemExit(asyncio.run(run_paper(settings, cycles=args.cycles)))
     raise SystemExit(asyncio.run(run()))
 
 

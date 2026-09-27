@@ -24,6 +24,16 @@ FEE_RATE_IS_FRACTION_DEFAULT = True
 # Approved market entry: spend quote (USDT) and cancel the remainder.
 MARKET_TIME_IN_FORCE = "IOC"
 MARKET_ENTRY_FIELD = "funds"
+# Approved exit: sell the exact base quantity, floored to baseIncrement.
+MARKET_EXIT_FIELD = "size"
+MARKET_EXIT_SIDE = "sell"
+
+# A bar is closed when its window has ended, plus this grace, and REST has the bar.
+CANDLE_CLOSE_GRACE_SECONDS = 5
+DEFAULT_FEE_RATE = Decimal("0.01")
+# Spread, liquidity and the balance check use a full book snapshot and REST trading balance.
+USE_FULL_ORDERBOOK_SNAPSHOT = True
+USE_REST_TRADING_BALANCE = True
 
 # The bot never moves funding into trading on its own.
 AUTO_TRANSFER_FUNDING_TO_TRADING = False

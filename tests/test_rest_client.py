@@ -30,7 +30,7 @@ from xrocket.exceptions import (
 from xrocket.models import Symbol
 from xrocket.precision import floor_funds, floor_price, floor_size, format_decimal, quote_step
 from xrocket.rate_limit import ClientRateLimiter
-from xrocket.rest_client import XRocketRestClient
+from xrocket.rest_client import XRocketRestClient, page_limit_seconds
 
 TOKEN = "test-token-value"
 
@@ -309,6 +309,27 @@ async def test_market_entry_sends_funds_ioc_and_client_order_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_market_exit_sends_size_ioc_and_not_funds() -> None:
+    exchange = Exchange()
+    body = order_body()
+    body["side"] = "sell"
+    body["size"] = "0.5"
+    body.pop("funds", None)
+    exchange.add(status=201, payload=body)
+    async with serve(exchange) as base:
+        async with client(base) as api:
+            await api.create_market_exit("BTC-USDT", Decimal("0.50"), "abcDEF_01")
+    sent = exchange.calls[0]["json"]
+    assert isinstance(sent, dict)
+    assert sent["side"] == "sell"
+    assert sent["type"] == "market"
+    assert sent["size"] == "0.5"
+    assert sent["timeInForce"] == "IOC"
+    assert sent["clientOrderId"] == "abcDEF_01"
+    assert "funds" not in sent
+
+
+@pytest.mark.asyncio
 async def test_disabled_execution_does_not_post() -> None:
     settings = Settings(_env_file=None, execution_mode="paper", allow_exchange_orders=True)
     exchange = Exchange()
@@ -373,6 +394,11 @@ async def test_candle_rows_use_documented_field_order_and_page_on_max_interval()
     assert rows[0].low == Decimal("0.5")
     assert rows[0].open == Decimal("1")
     assert rows[0].base_volume == Decimal("8")
+
+
+def test_page_limit_keeps_seconds_and_scales_a_millisecond_cap() -> None:
+    assert page_limit_seconds(3600, 7200) == 3600
+    assert page_limit_seconds(259200000, 5 * 86400) == 259200
 
 
 @pytest.mark.asyncio

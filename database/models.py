@@ -284,6 +284,7 @@ class BotSettings(Base):
     is_paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     emergency_stop: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     live_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    paper_cash: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False

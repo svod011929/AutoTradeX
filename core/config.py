@@ -11,6 +11,8 @@ from core.trading_policy import (
     ALLOW_EXCHANGE_ORDERS_DEFAULT,
     DEFAULT_ATR_SL_MULTIPLIER,
     DEFAULT_MIN_VOLUME_RATIO,
+    CANDLE_CLOSE_GRACE_SECONDS,
+    DEFAULT_FEE_RATE,
     DEFAULT_TAKE_PROFIT_RR,
     DEFAULT_TRAILING_ACTIVATION_ATR,
     DEFAULT_TRAILING_ATR_MULTIPLIER,
@@ -103,6 +105,19 @@ class Settings(BaseSettings):
     trailing_atr_multiplier: Decimal = DEFAULT_TRAILING_ATR_MULTIPLIER
     min_volume_ratio: Decimal = DEFAULT_MIN_VOLUME_RATIO
     take_profit_rr: Decimal = DEFAULT_TAKE_PROFIT_RR
+    candle_close_grace_seconds: int = CANDLE_CLOSE_GRACE_SECONDS
+    default_fee_rate: Decimal = DEFAULT_FEE_RATE
+    orderbook_depth: int = 50
+    max_spread_fraction: Decimal = Decimal("0.005")
+    max_slippage_fraction: Decimal = Decimal("0.003")
+    paper_slippage_fraction: Decimal = Decimal("0.001")
+    cash_reserve_fraction: Decimal = Decimal("0.02")
+    rsi_entry_min: Decimal = Decimal("30")
+    rsi_entry_max: Decimal = Decimal("70")
+    volume_ma_period: int = 20
+    notification_max_attempts: int = 4
+    paper_starting_equity: Decimal = Decimal("1000")
+    default_symbols: str = "TON-USDT,BTC-USDT"
 
     @field_validator("log_level")
     @classmethod
@@ -120,11 +135,32 @@ class Settings(BaseSettings):
             raise ValueError("value must be >= 0")
         return value
 
-    @field_validator("backup_retention", "backup_interval_hours", "ws_ping_interval")
+    @field_validator("backup_retention", "backup_interval_hours", "ws_ping_interval", "volume_ma_period")
     @classmethod
     def _positive(cls, value: int) -> int:
         if value < 1:
             raise ValueError("value must be >= 1")
+        return value
+
+    @field_validator("candle_close_grace_seconds")
+    @classmethod
+    def _grace(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("grace must be >= 0")
+        return value
+
+    @field_validator("notification_max_attempts")
+    @classmethod
+    def _attempts(cls, value: int) -> int:
+        if value < 3 or value > 5:
+            raise ValueError("notification attempts must be from 3 to 5")
+        return value
+
+    @field_validator("orderbook_depth")
+    @classmethod
+    def _depth(cls, value: int) -> int:
+        if value not in {5, 10, 20, 50, 100, 200, 500}:
+            raise ValueError("orderbook depth must be one of 5, 10, 20, 50, 100, 200, 500")
         return value
 
     @field_validator(
@@ -146,11 +182,25 @@ class Settings(BaseSettings):
         "trailing_atr_multiplier",
         "min_volume_ratio",
         "take_profit_rr",
+        "default_fee_rate",
+        "paper_starting_equity",
     )
     @classmethod
     def _positive_decimal(cls, value: Decimal) -> Decimal:
         if value <= 0:
             raise ValueError("value must be > 0")
+        return value
+
+    @field_validator(
+        "max_spread_fraction",
+        "max_slippage_fraction",
+        "paper_slippage_fraction",
+        "cash_reserve_fraction",
+    )
+    @classmethod
+    def _fraction(cls, value: Decimal) -> Decimal:
+        if value < 0 or value >= 1:
+            raise ValueError("fraction must be >= 0 and < 1")
         return value
 
     @model_validator(mode="after")

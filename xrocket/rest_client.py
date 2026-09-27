@@ -216,6 +216,18 @@ class XRocketRestClient:
         }
         return await self.create_order(payload)
 
+    async def create_market_exit(self, symbol: str, size: Decimal | str, client_order_id: str) -> ExchangeOrder:
+        """Market SELL of an exact base size. Store ``client_order_id`` before calling."""
+        payload = {
+            "symbol": symbol,
+            "side": "sell",
+            "type": "market",
+            "size": format_decimal(Decimal(str(size))),
+            "timeInForce": MARKET_TIME_IN_FORCE,
+            "clientOrderId": client_order_id,
+        }
+        return await self.create_order(payload)
+
     async def create_order(self, payload: Mapping[str, object]) -> ExchangeOrder:
         """POST /api/v1/orders. The caller stores clientOrderId before this call.
 
@@ -324,12 +336,15 @@ class XRocketRestClient:
         end_at: datetime,
         exc: IntervalTooBigError,
     ) -> dict[datetime, Candle]:
-        max_seconds = exc.max_interval_seconds
-        if max_seconds is None or max_seconds <= 0:
+        if exc.max_interval_seconds is None or exc.max_interval_seconds <= 0:
             raise exc
         if end_at <= start_at:
             raise exc
         span = (end_at - start_at).total_seconds()
+        try:
+            max_seconds = page_limit_seconds(exc.max_interval_seconds, span)
+        except ValueError:
+            raise exc from None
         pages = int(span // max_seconds) + (1 if span % max_seconds else 0)
         if pages > _MAX_CANDLE_PAGES:
             raise XRocketError(f"candle window needs {pages} pages; narrow the range") from exc
@@ -512,6 +527,25 @@ def _list_field(body: dict[str, object], name: str) -> list[object]:
     if not isinstance(value, list):
         raise XRocketError(f"response has no {name} array")
     return value
+
+
+def page_limit_seconds(reported: int, span_seconds: float) -> int:
+    """Page size in seconds for a window the exchange already rejected.
+
+    ``maxIntervalInSeconds`` is documented as seconds. Testnet has returned
+    ``259200000`` for a cap of 3 days, which is 3 days in milliseconds. When the
+    raw number does not shrink the rejected window and it is divisible by 1000,
+    the client treats it as milliseconds.
+    """
+    if reported <= 0:
+        raise ValueError("max interval must be positive")
+    if reported < span_seconds:
+        return reported
+    if reported % 1000 == 0:
+        scaled = reported // 1000
+        if 0 < scaled < span_seconds:
+            return scaled
+    raise ValueError("max interval does not shrink the window")
 
 
 def _store_candles(collected: dict[datetime, Candle], rows: list[object]) -> None:

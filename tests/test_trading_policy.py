@@ -5,13 +5,18 @@ from decimal import Decimal
 from core.config import Settings
 from core.trading_policy import (
     AUTO_TRANSFER_FUNDING_TO_TRADING,
+    CANDLE_CLOSE_GRACE_SECONDS,
     DEFAULT_ATR_SL_MULTIPLIER,
+    DEFAULT_FEE_RATE,
     DEFAULT_MIN_VOLUME_RATIO,
     DEFAULT_TAKE_PROFIT_RR,
     DEFAULT_TRAILING_ACTIVATION_ATR,
     DEFAULT_TRAILING_ATR_MULTIPLIER,
     MARKET_ENTRY_FIELD,
+    MARKET_EXIT_FIELD,
     MARKET_TIME_IN_FORCE,
+    USE_FULL_ORDERBOOK_SNAPSHOT,
+    USE_REST_TRADING_BALANCE,
     exchange_orders_allowed,
     fee_rate_to_fraction,
     generate_client_order_id,
@@ -69,3 +74,24 @@ def test_strategy_columns_use_the_approved_defaults() -> None:
     assert columns.min_volume_ratio.default.arg == DEFAULT_MIN_VOLUME_RATIO
     assert str(columns.atr_sl_multiplier.server_default.arg) == "2.0"
     assert str(columns.min_volume_ratio.server_default.arg) == "1.0"
+
+
+def test_stage4_exit_candle_fee_and_book_decisions() -> None:
+    assert MARKET_EXIT_FIELD == "size"
+    assert CANDLE_CLOSE_GRACE_SECONDS == 5
+    assert DEFAULT_FEE_RATE == Decimal("0.01")
+    assert USE_FULL_ORDERBOOK_SNAPSHOT is True
+    assert USE_REST_TRADING_BALANCE is True
+    settings = Settings(_env_file=None)
+    assert settings.candle_close_grace_seconds == 5
+    assert settings.default_fee_rate == Decimal("0.01")
+    assert settings.max_spread_fraction == Decimal("0.005")
+    assert settings.max_slippage_fraction == Decimal("0.003")
+    assert settings.paper_slippage_fraction == Decimal("0.001")
+    assert settings.cash_reserve_fraction == Decimal("0.02")
+    assert settings.rsi_entry_min == Decimal("30")
+    assert settings.rsi_entry_max == Decimal("70")
+    assert settings.volume_ma_period == 20
+    assert settings.notification_max_attempts == 4
+    assert settings.orderbook_depth == 50
+    assert settings.paper_starting_equity == Decimal("1000")
