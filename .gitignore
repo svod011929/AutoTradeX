@@ -8,6 +8,7 @@ venv/
 data/*.db
 data/*.db-*
 data/backtests/
+data/research/
 backups/*.db
 *.egg-info/
 .coverage
