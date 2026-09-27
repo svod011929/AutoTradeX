@@ -1,14 +1,47 @@
-# AutoTrade X
+<div align="center">
 
-Telegram-бот автоторговли через xRocket Exchange API. Прибыль не гарантируется.
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:00F0FC,100:FF00FF&height=220&section=header&text=AutoTrade%20X&fontSize=58&fontColor=00F0FC&animation=twinkling&fontAlignY=32&desc=%D0%B7%D0%B0%D0%BC%D0%BE%D1%80%D0%BE%D0%B6%D0%B5%D0%BD%20%C2%B7%20xRocket%20%C2%B7%20Telegram&descAlignY=54&descAlign=58" alt="AutoTrade X" width="100%">
 
-Сейчас в репозитории этапы 1–5: разбор API, SQLite, клиенты REST/WebSocket, бумажная торговля, Telegram-меню и бэктест. `python -m app.main` поднимает базу и выходит. `python -m app.main --paper` и `python -m app.main --telegram` крутят движок на публичных данных и ордера на биржу не отправляют.
+<img src="https://readme-typing-svg.demolab.com?font=Share+Tech+Mono&weight=500&size=22&duration=3200&pause=900&color=FF00FF&background=00000000&center=true&vCenter=true&width=820&height=48&lines=%D0%9F%D0%BB%D0%B0%D1%82%D1%84%D0%BE%D1%80%D0%BC%D0%B0+%D0%B0%D0%B2%D1%82%D0%BE%D1%82%D1%80%D0%B5%D0%B9%D0%B4%D0%B8%D0%BD%D0%B3%D0%B0+%D0%B4%D0%BB%D1%8F+xRocket+Exchange;Telegram-%D0%B8%D0%BD%D1%82%D0%B5%D1%80%D1%84%D0%B5%D0%B9%D1%81+%C2%B7+paper-%D1%80%D0%B5%D0%B6%D0%B8%D0%BC;%D0%91%D1%8D%D0%BA%D1%82%D0%B5%D1%81%D1%82+%D0%B1%D0%B5%D0%B7+look-ahead;%D0%A1%D1%82%D0%B0%D1%82%D1%83%D1%81%3A+%D0%BF%D1%80%D0%BE%D0%B5%D0%BA%D1%82+%D0%B7%D0%B0%D0%BC%D0%BE%D1%80%D0%BE%D0%B6%D0%B5%D0%BD" alt="Платформа автотрейдинга для xRocket Exchange">
+
+<br>
+
+[![Python](https://img.shields.io/badge/Python-3.12+-00F0FC?style=for-the-badge&logo=python&logoColor=000000&labelColor=000000)](https://www.python.org/)
+[![Aiogram](https://img.shields.io/badge/Aiogram-3-FF00FF?style=for-the-badge&logo=telegram&logoColor=000000&labelColor=000000)](https://docs.aiogram.dev/)
+[![SQLite](https://img.shields.io/badge/SQLite-WAL-00F0FC?style=for-the-badge&logo=sqlite&logoColor=000000&labelColor=000000)](https://www.sqlite.org/)
+[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2-FF00FF?style=for-the-badge&labelColor=000000)](https://www.sqlalchemy.org/)
+[![Статус](https://img.shields.io/badge/статус-заморожен-FF00FF?style=for-the-badge&labelColor=000000)](#статус-заморожен)
+[![Лицензия](https://img.shields.io/badge/license-MIT-00F0FC?style=for-the-badge&labelColor=000000)](LICENSE)
+
+</div>
+
+## Статус: заморожен
+
+> **Живое исполнение реальных ордеров не включено.** Проект остановлен и сохранён как есть. Режим по умолчанию — `paper`: на биржу ничего не отправляется. Флаги `EXECUTION_MODE=paper` и `ALLOW_EXCHANGE_ORDERS=false` трогать для «боевого» запуска не нужно — запуск реальных ордеров в этом состоянии не предусмотрен.
+
+Исследование входов (режим по длинной средней, пробой Donchian, вход лимиткой maker, сетка в боковике) на истории Binance и на публичных свечах xRocket mainnet **не дало стратегии, которая обыграла бы buy-and-hold с учётом риска при комиссии taker 0,3%**. Подробные таблицы in-sample, слепого года и проверки на xRocket: [docs/RESEARCH_ENTRIES.md](docs/RESEARCH_ENTRIES.md).
+
+**Не финансовый совет. Используйте на свой риск.** Прибыль не гарантируется. Прошлый бэктест не обещает будущий результат.
+
+## Что это
+
+AutoTrade X — платформа автотрейдинга для [xRocket Exchange](https://exchange.xrocket.exchange) с интерфейсом в Telegram. Бот умеет читать публичный рынок, вести бумажный счёт, считать риск и прогонять историю. Решения заказчика и пробелы документации лежат в `docs/`.
+
+## Возможности
+
+- REST- и WebSocket-клиенты xRocket: свечи, стакан, публичные комиссии, приватные методы под Bearer.
+- Paper-режим: бумажный капитал, рыночные сделки локально, ордера на биржу не уходят.
+- Риск-менеджер: размер позиции с учётом комиссии и ожидаемого проскальзывания, пропуск сделки при чистом R:R ниже порога.
+- Идемпотентные ордера: `clientOrderId` записывается до запроса, повторный POST после таймаута не делается.
+- Reconciliation: сверка локальных позиций и ордеров с ответами биржи.
+- Бэктест без look-ahead: решение по закрытой свече, вход по открытию следующей, стоп раньше тейка, гэп за стопом — выход по open.
+- Research-модуль: отдельные стратегии (режим, Donchian, сетка) и слой исполнения лимитками. В боевой цикл они не подключены.
 
 ## Стек
 
-Python 3.12+, Aiogram 3, SQLAlchemy 2 async, aiosqlite, SQLite (WAL), Alembic, Pydantic Settings, cryptography (Fernet).
+Python 3.12+, Aiogram 3, SQLAlchemy 2 (async) + aiosqlite, SQLite в режиме WAL, Alembic, Pydantic Settings, cryptography (Fernet).
 
-## Локальный запуск
+## Быстрый старт
 
 ```bash
 python3.12 -m venv .venv
@@ -18,7 +51,7 @@ cp .env.example .env
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Вставьте напечатанный ключ в `ENCRYPTION_KEY` в `.env`. Токен xRocket для paper и бэктеста не нужен: публичные свечи и стакан открыты, ордера не отправляются. Для Telegram нужен `BOT_TOKEN` от BotFather и, если хотите команду `/admin`, ваш числовой id в `ADMIN_IDS`.
+Сгенерированный ключ вставьте в `ENCRYPTION_KEY` локального `.env`. Файл `.env` в git не входит. Токен биржи для paper и бэктеста не нужен: публичные свечи и стакан открыты.
 
 ```bash
 python -m app.main
@@ -26,49 +59,64 @@ python -m app.main --paper --cycles 1
 python -m app.main --telegram
 python -m backtest --pair BTC-USDT --days 30
 python -m backtest --env mainnet --pair BTC-USDT --days 90 --timeframe 15m
-python -m backtest --env mainnet --pair ETH-USDT --days 180 --timeframe 1h
+python -m research
 pytest
 ```
 
-`--paper` без `--cycles` работает, пока процесс не получит SIGINT или SIGTERM. Открытые бумажные позиции при остановке не закрываются. `--telegram` показывает меню, принимает команды и крутит тот же бумажный цикл. Пустой `BOT_TOKEN` завершает процесс с кодом 2.
+| Команда | Что делает |
+| --- | --- |
+| `python -m app.main` | Поднимает базу и выходит. |
+| `python -m app.main --paper` | Бумажный цикл на публичных данных. Без `--cycles` работает до SIGINT/SIGTERM. Ордера не отправляет. |
+| `python -m app.main --telegram` | Меню Aiogram и тот же бумажный цикл. Пустой `BOT_TOKEN` завершает процесс с кодом 2. |
+| `python -m backtest` | Прогон боевой стратегии по свечам. `--env mainnet` читает публичную историю, без токена и без ордеров. |
+| `python -m research` | Исследование входов. Дефолты живого режима не меняет. |
 
-Исследование входов (`python -m research`) гоняет отдельные модули в `research/` по публичным свечам Binance и кэшу xRocket. Оно не включает стратегию в бота и не меняет дефолты живого режима. Кэш свечей лежит в `data/research/` и в репозиторий не входит.
+`--paper` без `--cycles` не закрывает открытые бумажные позиции при остановке. Живой таймфрейм по умолчанию — 15m. `--timeframe` у бэктеста задаёт интервал одного прогона.
 
-Бэктест пишет отчёт в консоль и файлы `data/backtests/reports/`. `--env` выбирает публичный хост свечей: `testnet` по умолчанию или `mainnet`. Кэш лежит отдельно в `data/backtests/testnet` и `data/backtests/mainnet`. Mainnet в этом режиме только читает публичные свечи, карточку пары и публичные `trade-fees`, без токена и без ордеров. Комиссия прогона — taker из этого ответа, иначе 0.3%. `--fee` меняет комиссию одного прогона и не трогает дефолт. `--timeframe` задаёт интервал свечей (`15m`, `1h`, `4h`); живой режим по умолчанию остаётся на 15m. Решение принимается по закрытой свече, сделка считается по открытию следующей. Порог спреда 0.5% в бэктесте не подставляется как фактический спред.
-
-Проверка testnet только чтением (символы, свечи, балансы, без ордеров):
-
-```bash
-XROCKET_API_TOKEN=... python -m scripts.smoke_testnet
-```
-
-База: `data/autotrade.db`. Бэкапы: `backups/autotrade_YYYY-MM-DD_HH-MM-SS.db` (SQLite backup API, хранится `BACKUP_RETENTION` файлов).
-
-## Docker
+Docker:
 
 ```bash
 docker compose up -d --build
 ```
 
-Контейнер перезапускается, пока его не остановят (`restart: unless-stopped`). Каталоги `./data` и `./backups` смонтированы в контейнер.
+Каталоги `./data` и `./backups` монтируются в контейнер.
 
-## Режимы
+Опциональная проверка testnet только чтением (символы, свечи, балансы, без ордеров): `python -m scripts.smoke_testnet`. Токен для этого скрипта задайте в окружении и не коммитьте.
 
-У xRocket есть testnet. `XROCKET_ENV` по умолчанию `testnet`, URL в `.env.example` тоже testnet. Режим исполнения по умолчанию `paper`. Реальные ордера включаются только вручную: `EXECUTION_MODE=testnet` и `ALLOW_EXCHANGE_ORDERS=true`. В paper флаг ордера не открывает. Решения заказчика: `docs/CLIENT_DECISIONS.md`.
+## Конфигурация
 
-Токен биржи хранится только в зашифрованном виде (`encrypted_api_token`). В логи не попадают токен, заголовок Authorization и ключ шифрования.
+Образец без секретов: [`.env.example`](.env.example). Скопируйте его в `.env` и заполните локально.
 
-## Что уже есть
+| Переменная | Зачем |
+| --- | --- |
+| `BOT_TOKEN` | Токен BotFather. Пустой — Telegram не стартует. |
+| `ADMIN_IDS` | Числовые id для команды `/admin`. |
+| `ENCRYPTION_KEY` | Ключ Fernet. Генерируется локально, в репозиторий не кладётся. |
+| `XROCKET_ENV` | `testnet` по умолчанию. URL в примере тоже testnet. |
+| `EXECUTION_MODE` | `paper`. Реальные ордера этим репозиторием не включаются. |
+| `ALLOW_EXCHANGE_ORDERS` | `false`. |
+| `DEFAULT_FEE_RATE` | `0.003` — taker 0,3%, доля, не проценты. |
+| `DATABASE_URL` | SQLite, файл `data/autotrade.db`. |
+| `XROCKET_API_TOKEN` | Только для ручного smoke-скрипта. В примере пустой. |
 
-- `docs/XROCKET_API.md` — REST, WebSocket, ошибки, лимиты, пробелы документации.
-- `xrocket/` — REST и WebSocket. Свечи и стакан в SQLite из сокета не пишутся. Таймаут создания ордера не приводит к повторному POST. Выход — рыночный SELL с `size`.
-- `trading/` — индикаторы, тренд (только LONG) на таймфрейме настроек, по умолчанию 15m, риск, бумажное исполнение, ордера и позиции. Ордер создаётся только в order manager, `clientOrderId` пишется до запроса. Размер позиции учитывает комиссии и ожидаемое проскальзывание. Сделка с чистым R:R после издержек ниже 1.5 пропускается.
-- `python -m app.main --paper` — цикл на публичном REST testnet. Капитал бумажный, с `PAPER_STARTING_EQUITY`.
-- `python -m app.main --telegram` — меню Aiogram 3 и тот же бумажный цикл. Токен биржи в чате сразу шифруется, сообщение удаляется. MAINNET записывается только после фразы `START LIVE`, `XROCKET_ENV=mainnet` и проверки, что TON-USDT есть на бирже.
-- `python -m backtest --pair BTC-USDT --days 30` — прогон стратегии по истории testnet. `--env mainnet` читает публичные свечи основной сети. Ордера не отправляются.
-- Схема SQLite: пользователи, аккаунты xRocket, стратегии и настройки, позиции, ордера, сигналы, сделки, дневная статистика, очередь уведомлений, настройки бота, системные события, heartbeats, свечи. У настроек бота есть `paper_cash`.
-- Повтор при `database is locked`: 100 мс, 250 мс, 500 мс, 1 с, 2 с, затем ошибка.
-- Проверка целостности и аварийный бэкап, если `integrity_check` не равен `ok`.
+Токен биржи, если его когда-нибудь сохраняют через бота, лежит в базе в зашифрованном виде. В логи не попадают токен, заголовок Authorization и ключ шифрования.
+
+## Структура
+
+```text
+app/            точка входа, paper-цикл
+bot/            Telegram: команды, клавиатуры, состояния
+xrocket/        REST, WebSocket, комиссии, точность лотов
+trading/        стратегия, риск, ордера, позиции, бумажное исполнение
+services/       сверка, уведомления, бэкап, watchdog
+database/       модели, репозитории, Alembic
+backtest/       движок без look-ahead и CLI
+research/       исследование входов, стратегии отдельно от бота
+docs/           API, решения заказчика, отчёт исследования
+tests/          pytest
+```
+
+База: `data/autotrade.db`. Бэкапы: `backups/`. Кэш свечей бэктеста и research (`data/backtests/`, `data/research/`) и файлы `*.db` в git не входят.
 
 ## Тесты
 
@@ -76,4 +124,22 @@ docker compose up -d --build
 pytest
 ```
 
-`tests/test_sqlite.py`, `tests/test_backup.py`, `tests/test_security.py`, `tests/test_rest_client.py`, `tests/test_websocket.py`, `tests/test_trading_policy.py`, плюс тесты индикаторов, стратегии, риска, ордеров, позиций, сверки, уведомлений, пяти критических сценариев, Telegram-команд и бэктеста.
+Покрыты SQLite и бэкап, шифрование, REST и WebSocket, политика торговли, индикаторы, стратегия, риск, ордера, позиции, сверка, уведомления, пять критических сценариев, команды Telegram, бэктест (в том числе отсутствие look-ahead) и research (лимитки, сетка, стоп).
+
+## Контакты
+
+Автор: **KodoDrive**
+
+| | |
+| --- | --- |
+| Telegram | [t.me/gveom](https://t.me/gveom) · `@gveom` |
+| Email | [antihype2205@yandex.ru](mailto:antihype2205@yandex.ru) |
+| GitHub | [github.com/svod011929](https://github.com/svod011929) |
+
+<div align="center">
+
+[![Telegram](https://img.shields.io/badge/Telegram-@gveom-00F0FC?style=for-the-badge&logo=telegram&logoColor=000000&labelColor=000000)](https://t.me/gveom)
+[![Email](https://img.shields.io/badge/email-KodoDrive-FF00FF?style=for-the-badge&labelColor=000000)](mailto:antihype2205@yandex.ru)
+[![GitHub](https://img.shields.io/badge/GitHub-svod011929-00F0FC?style=for-the-badge&logo=github&logoColor=000000&labelColor=000000)](https://github.com/svod011929)
+
+</div>

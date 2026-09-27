@@ -5,8 +5,10 @@ __pycache__/
 .venv/
 venv/
 .env
-data/*.db
-data/*.db-*
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
 data/backtests/
 data/research/
 backups/*.db
