@@ -1,0 +1,13 @@
+aiogram>=3.13,<4
+aiohttp>=3.10
+SQLAlchemy[asyncio]>=2.0.30
+aiosqlite>=0.20
+alembic>=1.13
+pydantic>=2.6
+pydantic-settings>=2.2
+cryptography>=42
+pandas>=2.2
+numpy>=1.26
+python-dotenv>=1.0
+pytest>=8.0
+pytest-asyncio>=0.24

@@ -1,0 +1,1 @@
+"""Strategy engine stub."""
