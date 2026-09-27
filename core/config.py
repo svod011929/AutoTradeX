@@ -7,6 +7,19 @@ from typing import Literal, Never
 from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.trading_policy import (
+    ALLOW_EXCHANGE_ORDERS_DEFAULT,
+    DEFAULT_ATR_SL_MULTIPLIER,
+    DEFAULT_MIN_VOLUME_RATIO,
+    DEFAULT_TAKE_PROFIT_RR,
+    DEFAULT_TRAILING_ACTIVATION_ATR,
+    DEFAULT_TRAILING_ATR_MULTIPLIER,
+    EXECUTION_MODE_DEFAULT,
+    FEE_RATE_IS_FRACTION_DEFAULT,
+    ExecutionModeName,
+    exchange_orders_allowed as orders_allowed_for_mode,
+)
+
 XRocketEnv = Literal["testnet", "mainnet"]
 RiskName = Literal["low", "medium", "high"]
 
@@ -77,6 +90,19 @@ class Settings(BaseSettings):
     backup_interval_hours: int = 24
     backup_retention: int = 7
     cooldown_minutes: int = 30
+    execution_mode: ExecutionModeName = EXECUTION_MODE_DEFAULT
+    allow_exchange_orders: bool = ALLOW_EXCHANGE_ORDERS_DEFAULT
+    fee_rate_is_fraction: bool = FEE_RATE_IS_FRACTION_DEFAULT
+    rest_timeout_seconds: float = 10
+    rest_max_rps: float = 2
+    ws_stale_seconds: float = 90
+    ws_reconnect_base_seconds: float = 1
+    ws_reconnect_max_seconds: float = 30
+    atr_sl_multiplier: Decimal = DEFAULT_ATR_SL_MULTIPLIER
+    trailing_activation_atr: Decimal = DEFAULT_TRAILING_ACTIVATION_ATR
+    trailing_atr_multiplier: Decimal = DEFAULT_TRAILING_ATR_MULTIPLIER
+    min_volume_ratio: Decimal = DEFAULT_MIN_VOLUME_RATIO
+    take_profit_rr: Decimal = DEFAULT_TAKE_PROFIT_RR
 
     @field_validator("log_level")
     @classmethod
@@ -101,6 +127,32 @@ class Settings(BaseSettings):
             raise ValueError("value must be >= 1")
         return value
 
+    @field_validator(
+        "rest_timeout_seconds",
+        "rest_max_rps",
+        "ws_stale_seconds",
+        "ws_reconnect_base_seconds",
+        "ws_reconnect_max_seconds",
+    )
+    @classmethod
+    def _positive_float(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("value must be > 0")
+        return value
+
+    @field_validator(
+        "atr_sl_multiplier",
+        "trailing_activation_atr",
+        "trailing_atr_multiplier",
+        "min_volume_ratio",
+        "take_profit_rr",
+    )
+    @classmethod
+    def _positive_decimal(cls, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise ValueError("value must be > 0")
+        return value
+
     @model_validator(mode="after")
     def _fill_exchange_urls(self) -> "Settings":
         if self.xrocket_rest_url.strip() == "":
@@ -108,6 +160,9 @@ class Settings(BaseSettings):
         if self.xrocket_ws_url.strip() == "":
             self.xrocket_ws_url = default_ws_url(self.xrocket_env)
         return self
+
+    def exchange_orders_allowed(self) -> bool:
+        return orders_allowed_for_mode(self.execution_mode, self.allow_exchange_orders)
 
     @property
     def admin_id_list(self) -> list[int]:

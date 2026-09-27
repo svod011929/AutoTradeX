@@ -2,7 +2,7 @@
 
 Telegram-бот автоторговли через xRocket Exchange API. Прибыль не гарантируется.
 
-Сейчас в репозитории этапы 1 и 2: разбор официального API (`docs/XROCKET_API.md`) и инфраструктура SQLite. Торговля, Telegram-интерфейс и WebSocket-клиент ещё не реализованы. `python -m app.main` поднимает базу, прогоняет миграции и `PRAGMA integrity_check`, затем выходит.
+Сейчас в репозитории этапы 1–3: разбор официального API (`docs/XROCKET_API.md`), SQLite и клиенты REST/WebSocket. Торговля и Telegram-интерфейс ещё не запущены. `python -m app.main` поднимает базу, прогоняет миграции и `PRAGMA integrity_check`, затем выходит.
 
 ## Стек
 
@@ -18,11 +18,17 @@ cp .env.example .env
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Вставьте напечатанный ключ в `ENCRYPTION_KEY` в `.env`. Токен бота и токен xRocket на этом этапе не обязательны: торговля не стартует.
+Вставьте напечатанный ключ в `ENCRYPTION_KEY` в `.env`. Токен бота и токен xRocket для обычного запуска не нужны: торговля не стартует.
 
 ```bash
 python -m app.main
 pytest
+```
+
+Проверка testnet только чтением (символы, свечи, балансы, без ордеров):
+
+```bash
+XROCKET_API_TOKEN=... python -m scripts.smoke_testnet
 ```
 
 База: `data/autotrade.db`. Бэкапы: `backups/autotrade_YYYY-MM-DD_HH-MM-SS.db` (SQLite backup API, хранится `BACKUP_RETENTION` файлов).
@@ -37,13 +43,14 @@ docker compose up -d --build
 
 ## Режимы
 
-У xRocket есть testnet. `XROCKET_ENV` по умолчанию `testnet`, URL в `.env.example` тоже testnet. Режим исполнения сделки в таблице `bot_settings` по умолчанию `paper`: до отдельного этапа бот не отправляет ордера. Mainnet требует явной смены окружения и подтверждения, это будет позже.
+У xRocket есть testnet. `XROCKET_ENV` по умолчанию `testnet`, URL в `.env.example` тоже testnet. Режим исполнения по умолчанию `paper`. Реальные ордера включаются только вручную: `EXECUTION_MODE=testnet` и `ALLOW_EXCHANGE_ORDERS=true`. В paper флаг ордера не открывает. Решения заказчика: `docs/CLIENT_DECISIONS.md`.
 
 Токен биржи хранится только в зашифрованном виде (`encrypted_api_token`). В логи не попадают токен, заголовок Authorization и ключ шифрования.
 
 ## Что уже есть
 
 - `docs/XROCKET_API.md` — REST, WebSocket, ошибки, лимиты, пробелы документации.
+- `xrocket/` — REST и WebSocket. Свечи и стакан в SQLite из сокета не пишутся. Таймаут создания ордера не приводит к повторному POST.
 - Схема SQLite: пользователи, аккаунты xRocket, стратегии и настройки, позиции, ордера, сигналы, сделки, дневная статистика, очередь уведомлений, настройки бота, системные события, heartbeats, свечи.
 - Повтор при `database is locked`: 100 мс, 250 мс, 500 мс, 1 с, 2 с, затем ошибка.
 - Проверка целостности и аварийный бэкап, если `integrity_check` не равен `ok`.
@@ -54,4 +61,4 @@ docker compose up -d --build
 pytest
 ```
 
-`tests/test_sqlite.py`, `tests/test_backup.py`, `tests/test_security.py`.
+`tests/test_sqlite.py`, `tests/test_backup.py`, `tests/test_security.py`, `tests/test_rest_client.py`, `tests/test_websocket.py`, `tests/test_trading_policy.py`.

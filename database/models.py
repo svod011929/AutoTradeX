@@ -23,6 +23,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from core.trading_policy import (
+    DEFAULT_ATR_SL_MULTIPLIER,
+    DEFAULT_MIN_VOLUME_RATIO,
+    DEFAULT_TAKE_PROFIT_RR,
+    DEFAULT_TRAILING_ACTIVATION_ATR,
+    DEFAULT_TRAILING_ATR_MULTIPLIER,
+)
+
 MONEY = Numeric(36, 18)
 
 
@@ -119,11 +127,21 @@ class StrategySettings(Base):
     ema_slow: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
     rsi_period: Mapped[int] = mapped_column(Integer, default=14, nullable=False)
     atr_period: Mapped[int] = mapped_column(Integer, default=14, nullable=False)
-    atr_sl_multiplier: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
-    take_profit_rr: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
-    trailing_activation_atr: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
-    trailing_atr_multiplier: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
-    min_volume_ratio: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    atr_sl_multiplier: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), default=DEFAULT_ATR_SL_MULTIPLIER, server_default="2.0", nullable=False
+    )
+    take_profit_rr: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), default=DEFAULT_TAKE_PROFIT_RR, server_default="2.0", nullable=False
+    )
+    trailing_activation_atr: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), default=DEFAULT_TRAILING_ACTIVATION_ATR, server_default="1.5", nullable=False
+    )
+    trailing_atr_multiplier: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), default=DEFAULT_TRAILING_ATR_MULTIPLIER, server_default="1.5", nullable=False
+    )
+    min_volume_ratio: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), default=DEFAULT_MIN_VOLUME_RATIO, server_default="1.0", nullable=False
+    )
     cooldown_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
 
 
